@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+matplotlib
+scikit-learn
+# Install PyTorch separately for your platform (CPU/CUDA/ROCm) to avoid wheel conflicts.
+#pip install "kagglehub[pandas-datasets]"
+kagglehub

@@ -1,0 +1,5 @@
+-r project_requirements.txt
+
+# Install a ROCm-matched PyTorch wheel separately after this base install.
+# Example only (do not run blindly; match your ROCm and Python versions):
+# pip install torch torchvision torchaudio --index-url <official-pytorch-rocm-index>

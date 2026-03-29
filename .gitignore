@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+.venv-linux/
+venv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Local model artifacts
+*.joblib
+.forecasters_models/
+
+# Logs and local runtime files
+*.log
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
