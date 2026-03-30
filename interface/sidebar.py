@@ -189,6 +189,7 @@ def render_sidebar(full_df, all_cols, total_rows):
         )
 
     return {
+        "max_rows": max_rows,
         "df_clean": df_clean,
         "target_col": target_col,
         "missing_rates": missing_rates,

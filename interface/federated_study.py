@@ -48,23 +48,6 @@ def _sorted_model_ids(model_ids):
     return sorted(model_ids, key=lambda m: (m != "global_aggregated", m))
 
 
-def _resolve_live_model_focus(epoch_df: pd.DataFrame, current_model: str, focus_mode: str, max_models: int):
-    available = _sorted_model_ids(epoch_df["model_id"].dropna().unique().tolist()) if not epoch_df.empty else []
-    if not available:
-        return []
-
-    if focus_mode == "All models":
-        selected = available
-    else:
-        selected = [m for m in ["global_aggregated", current_model] if m in available]
-        if not selected:
-            selected = [available[0]]
-
-    if max_models > 0 and len(selected) > max_models:
-        selected = selected[:max_models]
-    return selected
-
-
 def render_live_federated_training_dashboard(
     epoch_df: pd.DataFrame,
     round_df: pd.DataFrame,
@@ -75,77 +58,111 @@ def render_live_federated_training_dashboard(
     current_model: str,
     focus_mode: str,
     max_models: int,
+    live_metric: str = "RMSE",
 ):
-    if epoch_df is None or epoch_df.empty:
+    if round_df is None or round_df.empty:
         return
 
-    selected_models = _resolve_live_model_focus(epoch_df, current_model, focus_mode, max_models=max_models)
-    if not selected_models:
+    plot_metric = live_metric if live_metric in round_df.columns else ("RMSE" if "RMSE" in round_df.columns else "MSE")
+    if plot_metric not in round_df.columns:
         return
 
-    nrows = len(selected_models) + 1
-    fig, axes = plt.subplots(nrows=nrows, ncols=1, figsize=(12.5, max(4.5, 2.6 * nrows)))
-    axes_arr = np.atleast_1d(axes).reshape(-1)
+    round_df_clean = round_df.copy()
+    round_df_clean["round"] = pd.to_numeric(round_df_clean["round"], errors="coerce")
+    round_df_clean = round_df_clean.dropna(subset=["round", "model_id"]).copy()
+    if round_df_clean.empty:
+        return
 
-    max_x = 1
-    for i, model_id in enumerate(selected_models):
-        ax = axes_arr[i]
-        model_df = epoch_df[epoch_df["model_id"] == model_id].sort_values(["round", "epoch"])
-        if model_df.empty:
-            ax.set_title(f"{model_id} (waiting for epochs)")
-            ax.grid(alpha=0.28, linestyle="--")
-            continue
+    latest_round = int(current_round) if current_round else int(round_df_clean["round"].max())
+    latest_round_df = round_df_clean[round_df_clean["round"].astype(int) == latest_round].copy()
+    if latest_round_df.empty:
+        latest_round = int(round_df_clean["round"].max())
+        latest_round_df = round_df_clean[round_df_clean["round"].astype(int) == latest_round].copy()
 
-        x = (model_df["round"].astype(int) - 1) * max(1, int(local_epochs)) + model_df["epoch"].astype(int)
-        max_x = max(max_x, int(np.nanmax(x.values)))
-        train_loss = model_df["train_loss"].astype(float).values
-        val_loss = model_df["val_loss"].astype(float).values
+    latest_round_df = latest_round_df.sort_values(
+        by=[plot_metric, "model_id"],
+        ascending=[True, True],
+        na_position="last",
+    )
 
-        ax.plot(x, train_loss, color="#1f77b4", linewidth=1.6, label="Train loss")
-        if np.any(np.isfinite(val_loss)):
-            ax.plot(x, val_loss, color="#ff7f0e", linewidth=1.6, label="Val loss")
+    global_row = latest_round_df[latest_round_df["model_id"] == "global_aggregated"]
+    user_rows = latest_round_df[latest_round_df["model_id"] != "global_aggregated"]
 
-        for boundary in range(1, int(current_round) + 1):
-            xpos = boundary * max(1, int(local_epochs))
-            ax.axvline(xpos, color="#b0b0b0", linewidth=0.8, linestyle=":", alpha=0.45)
+    global_metric = float(global_row.iloc[0][plot_metric]) if not global_row.empty else float("nan")
+    user_mean = float(user_rows[plot_metric].mean()) if not user_rows.empty else float("nan")
+    best_user_metric = float(user_rows[plot_metric].min()) if not user_rows.empty else float("nan")
 
-        ax.set_title(f"{model_id} live local training")
-        ax.set_ylabel("Loss")
-        ax.set_yscale("log")
-        ax.grid(alpha=0.28, linestyle="--")
+    with live_plot_ph.container():
+        st.markdown(f"### Live Round Dashboard - {strategy_label}")
+        st.caption("Updates once per completed round. Each refresh includes every user plus the aggregated model.")
 
-    round_ax = axes_arr[-1]
-    if round_df is not None and not round_df.empty:
-        plot_metric = "RMSE" if "RMSE" in round_df.columns else "MSE"
-        for model_id in _sorted_model_ids(round_df["model_id"].dropna().unique().tolist()):
-            m_df = round_df[round_df["model_id"] == model_id].sort_values("round")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Round", f"{latest_round}")
+        m2.metric(f"Global {plot_metric}", f"{global_metric:.6f}" if np.isfinite(global_metric) else "N/A")
+        m3.metric(f"User mean {plot_metric}", f"{user_mean:.6f}" if np.isfinite(user_mean) else "N/A")
+        m4.metric(f"Best user {plot_metric}", f"{best_user_metric:.6f}" if np.isfinite(best_user_metric) else "N/A")
+
+        table_cols = ["model_id", "round", "MSE", "RMSE", "MAE", "MAPE (%)", "runtime_sec", "status"]
+        table_cols = [c for c in table_cols if c in latest_round_df.columns]
+        latest_table = latest_round_df[table_cols].copy()
+        st.dataframe(
+            latest_table.style.format(
+                {
+                    "MSE": "{:,.6f}",
+                    "RMSE": "{:,.6f}",
+                    "MAE": "{:,.6f}",
+                    "MAPE (%)": "{:,.4f}",
+                    "runtime_sec": "{:,.2f}",
+                },
+                na_rep="N/A",
+            ),
+            use_container_width=True,
+        )
+
+        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(14, 4.8))
+        trend_ax, round_ax = axes
+
+        for model_id in _sorted_model_ids(round_df_clean["model_id"].dropna().unique().tolist()):
+            m_df = round_df_clean[round_df_clean["model_id"] == model_id].sort_values("round")
             if m_df.empty or plot_metric not in m_df.columns:
                 continue
-            lw = 2.1 if model_id == "global_aggregated" else 1.5
-            round_ax.plot(m_df["round"], m_df[plot_metric], marker="o", linewidth=lw, label=model_id)
-        round_ax.set_title(f"Live round overview ({plot_metric})")
-        round_ax.set_xlabel("Round")
-        round_ax.set_ylabel(plot_metric)
-        round_ax.grid(alpha=0.28, linestyle="--")
-        _set_readable_round_ticks(round_ax, round_df["round"].dropna().tolist())
-        handles, labels = round_ax.get_legend_handles_labels()
-        if handles:
-            round_ax.legend(loc="best", ncol=2, fontsize=8)
-    else:
-        round_ax.set_title("Live round overview (waiting for first completed user)")
-        round_ax.set_xlabel("Round")
-        round_ax.set_ylabel("RMSE")
-        round_ax.grid(alpha=0.28, linestyle="--")
+            lw = 2.8 if model_id == "global_aggregated" else 1.6
+            alpha = 1.0 if model_id == "global_aggregated" else 0.8
+            color = "#d1495b" if model_id == "global_aggregated" else "#2a9d8f"
+            trend_ax.plot(
+                m_df["round"].astype(int),
+                m_df[plot_metric].astype(float),
+                marker="o",
+                linewidth=lw,
+                alpha=alpha,
+                color=color,
+                label=model_id,
+            )
 
-    for i in range(len(selected_models)):
-        axes_arr[i].set_xlim(left=1, right=max_x + 1)
-        handles, labels = axes_arr[i].get_legend_handles_labels()
+        trend_ax.set_title(f"{plot_metric} trend by model")
+        trend_ax.set_xlabel("Round")
+        trend_ax.set_ylabel(plot_metric)
+        trend_ax.grid(alpha=0.28, linestyle="--")
+        _set_readable_round_ticks(trend_ax, round_df_clean["round"].dropna().tolist())
+        handles, labels = trend_ax.get_legend_handles_labels()
         if handles:
-            axes_arr[i].legend(loc="best", fontsize=8)
-    fig.suptitle(f"Live federated training - {strategy_label}", y=1.01)
-    plt.tight_layout()
-    live_plot_ph.pyplot(fig, use_container_width=True)
-    plt.close(fig)
+            trend_ax.legend(loc="best", fontsize=8)
+
+        round_sorted = latest_round_df.sort_values(plot_metric, ascending=True, na_position="last")
+        bar_x = round_sorted["model_id"].astype(str).tolist()
+        bar_y = round_sorted[plot_metric].astype(float).tolist()
+        bar_colors = ["#d1495b" if m == "global_aggregated" else "#457b9d" for m in bar_x]
+        round_ax.bar(bar_x, bar_y, color=bar_colors, alpha=0.9)
+        round_ax.set_title(f"Round {latest_round} snapshot ({plot_metric})")
+        round_ax.set_xlabel("Model")
+        round_ax.set_ylabel(plot_metric)
+        round_ax.grid(alpha=0.2, linestyle="--", axis="y")
+        round_ax.tick_params(axis="x", labelrotation=25)
+
+        fig.suptitle("Federated training live monitor", y=1.03)
+        plt.tight_layout()
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
 
 
 def render_strategy_round_metric_overview(user_round_df: pd.DataFrame, strategy_label: str, key_prefix: str):
@@ -418,23 +435,13 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
         st.caption("Local epochs/round")
         st.markdown(f"**{cfg['epochs']}** (from sidebar)")
     with col5:
-        live_focus_mode = st.selectbox(
-            "Live focus",
-            options=["Current model + aggregated", "All models"],
+        live_round_metric = st.selectbox(
+            "Live round metric",
+            options=["RMSE", "MSE", "MAE", "MAPE (%)"],
             index=0,
-            key="fed_live_focus_mode",
-            help="Control how many model panels are redrawn during live training.",
+            key="fed_live_round_metric",
+            help="Metric displayed in the live round dashboard.",
         )
-
-    live_max_models = st.slider(
-        "Live max model panels",
-        min_value=2,
-        max_value=12,
-        value=6,
-        step=1,
-        key="fed_live_max_models",
-        help="Limit live redraw complexity for smoother UI updates.",
-    )
 
     run_federated = st.button(
         "▶ Run Federated Study For All Strategies",
@@ -474,7 +481,6 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
             for s_idx, strategy in enumerate(STRATEGIES):
                 label = _strategy_name(strategy)
                 fed_status_ph.caption(f"Running strategy **{label}** ({s_idx + 1}/{total_strategies})")
-                live_epoch_rows = []
                 live_round_rows = []
                 try:
                     df_imputed = _impute_for_strategy(source_df, strategy, fitted_imputer=fitted_imputer)
@@ -500,47 +506,20 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
 
                     def _round_cb(round_idx, model_id, row):
                         live_round_rows.append(row)
-                        epoch_df = pd.DataFrame(live_epoch_rows)
-                        round_df = pd.DataFrame(live_round_rows)
-                        render_live_federated_training_dashboard(
-                            epoch_df=epoch_df,
-                            round_df=round_df,
-                            strategy_label=label,
-                            live_plot_ph=live_plot_ph,
-                            local_epochs=int(cfg["epochs"]),
-                            current_round=int(round_idx),
-                            current_model=str(model_id),
-                            focus_mode=live_focus_mode,
-                            max_models=int(live_max_models),
-                        )
-
-                    def _live_epoch_cb(round_idx, model_id, epoch_idx, train_hist, val_hist):
-                        train_last = float(train_hist[-1]) if train_hist else float("nan")
-                        val_last = float(val_hist[-1]) if val_hist else float("nan")
-                        live_epoch_rows.append(
-                            {
-                                "round": int(round_idx),
-                                "model_id": str(model_id),
-                                "epoch": int(epoch_idx),
-                                "train_loss": train_last,
-                                "val_loss": val_last,
-                                "status": "ok",
-                            }
-                        )
-                        if len(live_epoch_rows) % 2 != 0:
+                        if str(model_id) != "global_aggregated":
                             return
-                        epoch_df = pd.DataFrame(live_epoch_rows)
                         round_df = pd.DataFrame(live_round_rows)
                         render_live_federated_training_dashboard(
-                            epoch_df=epoch_df,
+                            epoch_df=pd.DataFrame(),
                             round_df=round_df,
                             strategy_label=label,
                             live_plot_ph=live_plot_ph,
                             local_epochs=int(cfg["epochs"]),
                             current_round=int(round_idx),
                             current_model=str(model_id),
-                            focus_mode=live_focus_mode,
-                            max_models=int(live_max_models),
+                            focus_mode="All models",
+                            max_models=0,
+                            live_metric=live_round_metric,
                         )
 
                     fed_result = federated_training_study(
@@ -551,7 +530,7 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
                         num_rounds=num_rounds,
                         local_epochs_per_round=cfg["epochs"],
                         progress_callback=_fed_cb,
-                        epoch_callback=_live_epoch_cb,
+                        epoch_callback=None,
                         round_callback=_round_cb,
                     )
 
@@ -565,8 +544,9 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
                         local_epochs=int(cfg["epochs"]),
                         current_round=int(num_rounds),
                         current_model="global_aggregated",
-                        focus_mode=live_focus_mode,
-                        max_models=int(live_max_models),
+                        focus_mode="All models",
+                        max_models=0,
+                        live_metric=live_round_metric,
                     )
 
                     if fed_result.get("error"):
@@ -680,3 +660,72 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
 
             if s_idx < len(STRATEGIES) - 1:
                 st.divider()
+
+        st.markdown("### Strategy Comparison - Global Model Performance")
+        st.caption(f"Live round metric ({live_round_metric}) across all strategies. Each line is a strategy's aggregated model.")
+
+        if strategy_results:
+            fig, ax = plt.subplots(figsize=(14, 5.5))
+            strategy_plot_count = 0
+
+            for strategy in STRATEGIES:
+                if strategy not in strategy_results:
+                    continue
+
+                chosen = strategy_results[strategy]
+                strategy_user_round_df = chosen.get("user_round_metrics_df", pd.DataFrame())
+
+                if strategy_user_round_df.empty:
+                    continue
+
+                global_df = strategy_user_round_df[
+                    strategy_user_round_df["model_id"] == "global_aggregated"
+                ].sort_values("round")
+
+                if global_df.empty or live_round_metric not in global_df.columns:
+                    continue
+
+                label = _strategy_name(strategy)
+                y_values = global_df[live_round_metric].astype(float)
+                round_values = global_df["round"].astype(int)
+
+                ax.plot(
+                    round_values,
+                    y_values,
+                    marker="o",
+                    linewidth=2.3,
+                    markersize=6,
+                    label=label,
+                    alpha=0.88,
+                )
+                strategy_plot_count += 1
+
+            if strategy_plot_count > 0:
+                ax.set_title(
+                    f"Global Aggregated Model Comparison: {live_round_metric} by Strategy",
+                    fontsize=14,
+                    fontweight="bold",
+                )
+                ax.set_xlabel("Round", fontsize=11)
+                ax.set_ylabel(live_round_metric, fontsize=11)
+                ax.grid(alpha=0.3, linestyle="--")
+
+                all_rounds = []
+                for strategy in STRATEGIES:
+                    if strategy in strategy_results:
+                        df = strategy_results[strategy].get("user_round_metrics_df", pd.DataFrame())
+                        if not df.empty:
+                            all_rounds.extend(df["round"].dropna().tolist())
+                if all_rounds:
+                    _set_readable_round_ticks(ax, all_rounds)
+
+                handles, labels = ax.get_legend_handles_labels()
+                if handles:
+                    ax.legend(loc="best", fontsize=10, framealpha=0.95, ncol=2)
+
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+            else:
+                st.info("No global aggregated model metrics available for comparison across strategies.")
+                plt.close(fig)

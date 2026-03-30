@@ -1,6 +1,6 @@
 import streamlit as st
 
-from data_processing import inject_missing_values, load_dsmts_data
+from data_processing import RF_IMPUTER_CACHE, inject_missing_values, load_dsmts_data
 from interface import (
     render_experiment_overview_tab,
     render_federated_study_tab,
@@ -31,6 +31,54 @@ def _apply_imputation(df, strategy: str, _fitted_imputer=None):
     return df_out
 
 
+def _prep_cache_key(cfg, missing_rates, impute_strategy: str, imputer_for_training):
+    if len(cfg["df_clean"]) > 0:
+        idx_start = str(cfg["df_clean"].index[0])
+        idx_end = str(cfg["df_clean"].index[-1])
+    else:
+        idx_start = ""
+        idx_end = ""
+
+    imputer_token = None
+    if imputer_for_training is not None and RF_IMPUTER_CACHE.exists():
+        imputer_token = RF_IMPUTER_CACHE.stat().st_mtime_ns
+
+    rates_key = tuple(sorted((str(k), float(v)) for k, v in missing_rates.items()))
+    return (
+        int(cfg.get("max_rows", len(cfg["df_clean"]))),
+        int(len(cfg["df_clean"])),
+        idx_start,
+        idx_end,
+        rates_key,
+        impute_strategy,
+        cfg.get("target_col", ""),
+        bool(imputer_for_training is not None),
+        imputer_token,
+    )
+
+
+def _get_prepared_frames(cfg, missing_rates, impute_strategy, imputer_for_training):
+    key = _prep_cache_key(cfg, missing_rates, impute_strategy, imputer_for_training)
+    cached = st.session_state.get("_prepared_frames_cache")
+    if cached and cached.get("key") == key:
+        return cached["df_with_missing"], cached["df_for_training"]
+
+    df_clean = cfg["df_clean"]
+    df_with_missing = inject_missing_values(df_clean, missing_rates)
+    df_for_training = _apply_imputation(
+        df_with_missing,
+        impute_strategy,
+        _fitted_imputer=imputer_for_training,
+    )
+
+    st.session_state["_prepared_frames_cache"] = {
+        "key": key,
+        "df_with_missing": df_with_missing,
+        "df_for_training": df_for_training,
+    }
+    return df_with_missing, df_for_training
+
+
 full_df = get_data()
 all_cols = full_df.columns.tolist()
 total_rows = len(full_df)
@@ -40,13 +88,14 @@ cfg = render_sidebar(full_df=full_df, all_cols=all_cols, total_rows=total_rows)
 df_clean = cfg["df_clean"]
 missing_rates = cfg["missing_rates"]
 impute_strategy = cfg["impute_strategy"]
+rf_imputer = st.session_state.get("rf_imputer")
+imputer_for_training = rf_imputer if impute_strategy == "predictive_imputer" else None
 
-df_with_missing = inject_missing_values(df_clean, missing_rates)
-imputer_for_training = st.session_state.get("rf_imputer") if impute_strategy == "predictive_imputer" else None
-df_for_training = _apply_imputation(
-    df_with_missing,
+df_with_missing, df_for_training = _get_prepared_frames(
+    cfg,
+    missing_rates,
     impute_strategy,
-    _fitted_imputer=imputer_for_training,
+    imputer_for_training,
 )
 
 st.caption(
@@ -84,12 +133,12 @@ with tab_federated:
         cfg=cfg,
         impute_strategy=impute_strategy,
         df_with_missing=df_with_missing,
-        fitted_imputer=st.session_state.get("rf_imputer"),
+        fitted_imputer=rf_imputer,
     )
 
 with tab_preview:
     render_missing_value_preview_tab(
         df_with_missing=df_with_missing,
         target_col=cfg["target_col"],
-        fitted_imputer=st.session_state.get("rf_imputer"),
+        fitted_imputer=rf_imputer,
     )

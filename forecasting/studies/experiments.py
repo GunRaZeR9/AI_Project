@@ -12,6 +12,16 @@ from forecasting.training.trainer import train_gru
 from forecasting.utils.common import _get_device
 
 
+def _has_finite_core_metrics(metrics: Dict[str, Any]) -> bool:
+    """Core metrics must be finite for a valid training/eval step."""
+    core = [metrics.get("MSE"), metrics.get("MAE"), metrics.get("RMSE")]
+    try:
+        vals = np.asarray(core, dtype=float)
+    except Exception:
+        return False
+    return bool(np.all(np.isfinite(vals)))
+
+
 def hyperparameter_sweep(
     train_vals: np.ndarray,
     test_vals: np.ndarray,
@@ -265,12 +275,17 @@ def federated_training_study(
 
             try:
                 result = train_gru(train_vals, **kwargs)
-                local_models_this_round.append(result)
-                local_states.append(result["model"].state_dict())
 
                 full_series = np.concatenate([train_vals, test_vals])
                 test_preds = gru_one_step_predict(result, full_series, start_idx=len(train_vals))
+                if not np.all(np.isfinite(np.asarray(test_preds, dtype=float))):
+                    raise ValueError("Non-finite local predictions produced.")
                 metrics = compute_metrics(test_vals, test_preds)
+                if not _has_finite_core_metrics(metrics):
+                    raise ValueError(f"Non-finite local metrics: {metrics}")
+
+                local_models_this_round.append(result)
+                local_states.append(result["model"].state_dict())
 
                 user_rows_this_round.append(
                     {
@@ -338,6 +353,29 @@ def federated_training_study(
         if progress_callback:
             progress_callback(step, total_steps, f"Round {round_idx + 1}: aggregating and evaluating")
 
+        if not local_states:
+            failed_rows = [r for r in user_rows_this_round if str(r.get("status", "")) == "error"]
+            failed_models = [str(r.get("model_id", "unknown")) for r in failed_rows]
+            first_error = next((str(r.get("error", "")) for r in failed_rows if r.get("error")), "")
+            fail_msg = (
+                f"Round {round_idx + 1} produced no local model states. "
+                f"Failed users: {', '.join(failed_models) if failed_models else 'unknown'}."
+            )
+            if first_error:
+                fail_msg = f"{fail_msg} First error: {first_error}"
+            return {
+                "results_df": pd.DataFrame(user_rows_this_round),
+                "round_metrics_df": pd.DataFrame(round_rows),
+                "user_round_metrics_df": pd.DataFrame(user_round_rows),
+                "epoch_metrics_df": pd.DataFrame(epoch_metrics_rows),
+                "local_models": local_models_this_round,
+                "aggregated_model": None,
+                "global_model_result": None,
+                "user_ids": user_ids,
+                "global_norm_params": global_norm_params,
+                "error": fail_msg,
+            }
+
         try:
             aggregated_state = average_model_weights(local_states, aggregation_method=aggregation_method)
             global_state = {k: v.detach().clone() for k, v in aggregated_state.items()}
@@ -383,7 +421,11 @@ def federated_training_study(
                 norm_combined,
                 start_idx=len(norm_all_train),
             )
+            if not np.all(np.isfinite(np.asarray(global_test_preds, dtype=float))):
+                raise ValueError("Non-finite aggregated predictions produced.")
             global_metrics = compute_metrics(norm_all_test, global_test_preds)
+            if not _has_finite_core_metrics(global_metrics):
+                raise ValueError(f"Non-finite aggregated metrics: {global_metrics}")
 
             round_rows.append(
                 {

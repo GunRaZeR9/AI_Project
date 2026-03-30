@@ -24,15 +24,15 @@ def _drop_high_missing_columns(df, threshold=0.65):
 
 
 def _rolling_window_fill(df, window=3):
-    # compute rolling mean per column and fill NaN
+    # Vectorized fill for numeric columns: faster than per-column Python loops.
     df_filled = df.copy()
-    for col in df.columns:
-        try:
-            series = df[col]
-            rolled = series.ffill().rolling(window=window, min_periods=1).mean()
-            df_filled[col] = series.fillna(rolled)
-        except Exception:
-            df_filled[col] = df[col].fillna(0)
+    numeric_cols = df_filled.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) == 0:
+        return df_filled.fillna(0)
+
+    num_df = df_filled[numeric_cols]
+    rolled = num_df.ffill().rolling(window=window, min_periods=1).mean()
+    df_filled.loc[:, numeric_cols] = num_df.fillna(rolled)
     return df_filled
 
 

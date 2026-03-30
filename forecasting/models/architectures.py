@@ -1,5 +1,38 @@
 from __future__ import annotations
 
+import os
+import warnings
+
+
+_ROCM_DROPOUT_WARNING_EMITTED = False
+
+
+def _resolve_dropout(dropout: float, num_layers: int) -> tuple[float, float]:
+    """Return (head_dropout, recurrent_dropout) with ROCm-safe defaults."""
+    import torch
+    global _ROCM_DROPOUT_WARNING_EMITTED
+
+    head_dropout = float(dropout)
+    recurrent_dropout = 0.1 if num_layers > 1 else 0.0
+    disable_rocm_dropout = os.environ.get("FORECAST_ROCM_DISABLE_DROPOUT", "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    if getattr(torch.version, "hip", None) and disable_rocm_dropout and (head_dropout > 0.0 or recurrent_dropout > 0.0):
+        if not _ROCM_DROPOUT_WARNING_EMITTED:
+            warnings.warn(
+                "ROCm detected; disabling model dropout to avoid MIOpen HIPRTC rocrand build failures. "
+                "Set FORECAST_ROCM_DISABLE_DROPOUT=0 to re-enable dropout.",
+                RuntimeWarning,
+            )
+            _ROCM_DROPOUT_WARNING_EMITTED = True
+        return 0.0, 0.0
+
+    return head_dropout, recurrent_dropout
+
 
 class _GRUNet:
     """Thin wrapper around a PyTorch GRU module."""
@@ -22,7 +55,7 @@ class _GRUNet:
             "leaky_relu": nn.LeakyReLU(),
         }
         _act = _ACT_MAP.get(activation, nn.ReLU())
-        _drop = dropout
+        _drop, _recurrent_drop = _resolve_dropout(dropout, num_layers)
 
         class _Net(nn.Module):
             def __init__(self_):
@@ -32,10 +65,10 @@ class _GRUNet:
                     hidden_size=hidden,
                     num_layers=num_layers,
                     batch_first=True,
-                    dropout=0.1 if num_layers > 1 else 0.0,
+                    dropout=_recurrent_drop,
                 )
                 self_.act = _act
-                self_.drop = nn.Dropout(_drop)
+                self_.drop = nn.Dropout(_drop) if _drop > 0.0 else nn.Identity()
                 self_.fc = nn.Linear(hidden, 1)
 
             def forward(self_, x):
@@ -89,7 +122,7 @@ class _LSTMNet:
             "leaky_relu": nn.LeakyReLU(),
         }
         _act = _ACT_MAP.get(activation, nn.ReLU())
-        _drop = dropout
+        _drop, _recurrent_drop = _resolve_dropout(dropout, num_layers)
 
         class _Net(nn.Module):
             def __init__(self_):
@@ -99,10 +132,10 @@ class _LSTMNet:
                     hidden_size=hidden,
                     num_layers=num_layers,
                     batch_first=True,
-                    dropout=0.1 if num_layers > 1 else 0.0,
+                    dropout=_recurrent_drop,
                 )
                 self_.act = _act
-                self_.drop = nn.Dropout(_drop)
+                self_.drop = nn.Dropout(_drop) if _drop > 0.0 else nn.Identity()
                 self_.fc = nn.Linear(hidden, 1)
 
             def forward(self_, x):
@@ -156,7 +189,7 @@ class _RNNNet:
             "leaky_relu": nn.LeakyReLU(),
         }
         _act = _ACT_MAP.get(activation, nn.ReLU())
-        _drop = dropout
+        _drop, _recurrent_drop = _resolve_dropout(dropout, num_layers)
 
         class _Net(nn.Module):
             def __init__(self_):
@@ -166,11 +199,11 @@ class _RNNNet:
                     hidden_size=hidden,
                     num_layers=num_layers,
                     batch_first=True,
-                    dropout=0.1 if num_layers > 1 else 0.0,
+                    dropout=_recurrent_drop,
                     nonlinearity="tanh",
                 )
                 self_.act = _act
-                self_.drop = nn.Dropout(_drop)
+                self_.drop = nn.Dropout(_drop) if _drop > 0.0 else nn.Identity()
                 self_.fc = nn.Linear(hidden, 1)
 
             def forward(self_, x):

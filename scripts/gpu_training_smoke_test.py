@@ -53,6 +53,14 @@ def main() -> int:
     train_loss = result.get("train_loss", [])
     device = result.get("device", "unknown")
 
+    if device != "cuda":
+        print(f"[smoke] FAIL: expected device=cuda but got device={device}")
+        print("[smoke] Hint: set FORECAST_USE_GPU=1 before running this test.")
+        print(
+            "[smoke] Hint: on ROCm cards that need it, also set HSA_OVERRIDE_GFX_VERSION=10.3.0."
+        )
+        return 2
+
     print(f"[smoke] PASS: training completed on device={device}")
     print(f"[smoke] train_loss_points={len(train_loss)}")
     if train_loss:
