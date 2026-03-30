@@ -85,3 +85,18 @@ def train_test_split_series(
     n = len(series)
     split = int(np.floor(n * (1 - test_size)))
     return series.iloc[:split].copy(), series.iloc[split:].copy()
+
+
+def split_train_temporal_halves(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Split a train array into two chronological halves."""
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim != 1:
+        raise ValueError("split_train_temporal_halves expects a 1D array.")
+    if len(arr) < 4:
+        raise ValueError("Need at least 4 points to create two train halves.")
+    mid = len(arr) // 2
+    left = arr[:mid].copy()
+    right = arr[mid:].copy()
+    if len(left) < 2 or len(right) < 2:
+        raise ValueError("Train split produced an invalid half.")
+    return left, right

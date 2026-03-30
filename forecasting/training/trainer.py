@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import warnings
 from typing import Any, Dict, List
 
@@ -24,6 +25,17 @@ def _is_gpu_runtime_failure(exc: Exception) -> bool:
     return any(marker in msg for marker in gpu_markers)
 
 
+def _set_global_seed(seed: int) -> None:
+    """Best-effort deterministic seeding for numpy/python/torch."""
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 def train_gru(
     train_vals: np.ndarray,
     seq_len: int = 60,
@@ -44,6 +56,7 @@ def train_gru(
     model_type: str = "gru",
     initial_state: Dict[str, Any] | None = None,
     device_override: str | None = None,
+    random_seed: int | None = None,
     epoch_callback=None,
 ) -> Dict[str, Any]:
     """Train a GRU/LSTM/RNN model and return a results dictionary."""
@@ -51,6 +64,8 @@ def train_gru(
     import torch.nn as nn
 
     device = device_override or _get_device()
+    if random_seed is not None:
+        _set_global_seed(int(random_seed))
 
     data = train_vals.astype(float)
     if len(data) > max_train_points:
@@ -166,6 +181,7 @@ def train_gru(
             "seq_len": seq_len,
             "device": device,
             "model_type": model_type.lower(),
+            "seed": int(random_seed) if random_seed is not None else None,
         }
     except Exception as exc:
         if device == "cuda" and device_override is None and _is_gpu_runtime_failure(exc):
@@ -193,6 +209,7 @@ def train_gru(
                 model_type=model_type,
                 initial_state=initial_state,
                 device_override="cpu",
+                random_seed=random_seed,
                 epoch_callback=epoch_callback,
             )
         raise

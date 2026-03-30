@@ -68,3 +68,16 @@ def gru_one_step_predict(
             preds_norm.append(p)
 
     return _denormalize(np.array(preds_norm, dtype=float), norm_params)
+
+
+def ensemble_mean_one_step_predict(
+    results: List[Dict[str, Any]],
+    full_vals: np.ndarray,
+    start_idx: int,
+) -> np.ndarray:
+    """Mean aggregation for one-step-ahead predictions across models."""
+    if not results:
+        raise ValueError("results cannot be empty")
+    preds = [gru_one_step_predict(r, full_vals, start_idx=start_idx) for r in results]
+    stacked = np.stack(preds, axis=0)
+    return np.mean(stacked, axis=0)

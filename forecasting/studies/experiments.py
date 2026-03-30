@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 
-from forecasting.inference.predictor import gru_one_step_predict
+from forecasting.inference.predictor import ensemble_mean_one_step_predict, gru_one_step_predict
 from forecasting.metrics.evaluator import compute_metrics
 from forecasting.training.trainer import train_gru
-from forecasting.utils.common import _get_device
+from forecasting.utils.common import _get_device, split_train_temporal_halves
 
 
 def _has_finite_core_metrics(metrics: Dict[str, Any]) -> bool:
@@ -455,3 +456,365 @@ def federated_training_study(
         "user_ids": user_ids,
         "global_norm_params": global_norm_params,
     }
+
+
+def _normalize_seed_list(seeds: List[int] | None, num_seeds: int) -> List[int]:
+    if seeds:
+        out = [int(s) for s in seeds]
+    else:
+        out = list(range(max(1, int(num_seeds))))
+    return sorted(set(out))
+
+
+def _member_train_eval(
+    train_vals: np.ndarray,
+    test_vals: np.ndarray,
+    model_type: str,
+    seed: int,
+    normalization: str,
+    fixed_params: Dict[str, Any],
+) -> Dict[str, Any]:
+    started = perf_counter()
+    kwargs = {k: v for k, v in fixed_params.items()}
+    kwargs["normalization"] = normalization
+    kwargs["model_type"] = model_type
+    kwargs["random_seed"] = int(seed)
+    result = train_gru(train_vals, **kwargs)
+    full_series = np.concatenate([train_vals, test_vals])
+    preds = gru_one_step_predict(result, full_series, start_idx=len(train_vals))
+    metrics = compute_metrics(test_vals, preds)
+    return {
+        "result": result,
+        "preds": preds,
+        "metrics": metrics,
+        "runtime_sec": float(perf_counter() - started),
+    }
+
+
+def parallel_independent_ensemble_study(
+    strategy_data: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    model_types: List[str],
+    fixed_params: Dict[str, Any],
+    normalization: str = "minmax",
+    seeds: List[int] | None = None,
+    num_seeds: int = 5,
+    max_workers: int = 2,
+    progress_callback=None,
+) -> pd.DataFrame:
+    """Independent ensemble where members are trained in parallel across seeds."""
+    rows: List[Dict[str, Any]] = []
+    seed_list = _normalize_seed_list(seeds, num_seeds)
+    if not model_types:
+        return pd.DataFrame(rows)
+
+    total_members = len(strategy_data) * len(model_types) * len(seed_list) * 2
+    done_members = 0
+
+    for strategy, data_pair in strategy_data.items():
+        train_vals, test_vals = data_pair
+        half_1, half_2 = split_train_temporal_halves(train_vals)
+        member_specs = []
+        for scope_name, scope_train in (("half_1", half_1), ("half_2", half_2)):
+            for model_type in model_types:
+                for seed in seed_list:
+                    member_specs.append((scope_name, scope_train, model_type, int(seed)))
+
+        used_workers = max(1, int(max_workers))
+        if _get_device() == "cuda":
+            used_workers = 1
+
+        member_outputs: List[Dict[str, Any]] = []
+
+        def _run_one(spec):
+            scope_name, scope_train, model_type, seed = spec
+            output = _member_train_eval(
+                train_vals=scope_train,
+                test_vals=test_vals,
+                model_type=model_type,
+                seed=seed,
+                normalization=normalization,
+                fixed_params=fixed_params,
+            )
+            output.update(
+                {
+                    "scope": scope_name,
+                    "model_type": model_type,
+                    "seed": seed,
+                }
+            )
+            return output
+
+        if used_workers == 1:
+            for spec in member_specs:
+                try:
+                    out = _run_one(spec)
+                    member_outputs.append(out)
+                    metrics = out["metrics"]
+                    rows.append(
+                        {
+                            "experiment_mode": "parallel_independent",
+                            "strategy": strategy,
+                            "scope": out["scope"],
+                            "role": "member",
+                            "member_id": f"{out['model_type']}_seed{out['seed']}",
+                            "model_type": out["model_type"],
+                            "seed": out["seed"],
+                            "MSE": metrics["MSE"],
+                            "MAE": metrics["MAE"],
+                            "MAPE (%)": metrics["MAPE (%)"],
+                            "RMSE": metrics["RMSE"],
+                            "train_loss_final": (
+                                float(out["result"]["train_loss"][-1]) if out["result"].get("train_loss") else float("nan")
+                            ),
+                            "val_loss_final": (
+                                float(out["result"]["val_loss"][-1]) if out["result"].get("val_loss") else float("nan")
+                            ),
+                            "runtime_sec": out["runtime_sec"],
+                            "status": "ok",
+                            "error": "",
+                        }
+                    )
+                except Exception as exc:
+                    scope_name, _, model_type, seed = spec
+                    rows.append(
+                        {
+                            "experiment_mode": "parallel_independent",
+                            "strategy": strategy,
+                            "scope": scope_name,
+                            "role": "member",
+                            "member_id": f"{model_type}_seed{seed}",
+                            "model_type": model_type,
+                            "seed": seed,
+                            "MSE": float("nan"),
+                            "MAE": float("nan"),
+                            "MAPE (%)": float("nan"),
+                            "RMSE": float("nan"),
+                            "train_loss_final": float("nan"),
+                            "val_loss_final": float("nan"),
+                            "runtime_sec": float("nan"),
+                            "status": "error",
+                            "error": str(exc),
+                        }
+                    )
+                done_members += 1
+                if progress_callback:
+                    progress_callback(done_members, total_members, f"{strategy} members")
+        else:
+            with ThreadPoolExecutor(max_workers=used_workers) as executor:
+                futures = {executor.submit(_run_one, spec): spec for spec in member_specs}
+                for future in as_completed(futures):
+                    spec = futures[future]
+                    try:
+                        out = future.result()
+                        member_outputs.append(out)
+                        metrics = out["metrics"]
+                        rows.append(
+                            {
+                                "experiment_mode": "parallel_independent",
+                                "strategy": strategy,
+                                "scope": out["scope"],
+                                "role": "member",
+                                "member_id": f"{out['model_type']}_seed{out['seed']}",
+                                "model_type": out["model_type"],
+                                "seed": out["seed"],
+                                "MSE": metrics["MSE"],
+                                "MAE": metrics["MAE"],
+                                "MAPE (%)": metrics["MAPE (%)"],
+                                "RMSE": metrics["RMSE"],
+                                "train_loss_final": (
+                                    float(out["result"]["train_loss"][-1])
+                                    if out["result"].get("train_loss")
+                                    else float("nan")
+                                ),
+                                "val_loss_final": (
+                                    float(out["result"]["val_loss"][-1]) if out["result"].get("val_loss") else float("nan")
+                                ),
+                                "runtime_sec": out["runtime_sec"],
+                                "status": "ok",
+                                "error": "",
+                            }
+                        )
+                    except Exception as exc:
+                        scope_name, _, model_type, seed = spec
+                        rows.append(
+                            {
+                                "experiment_mode": "parallel_independent",
+                                "strategy": strategy,
+                                "scope": scope_name,
+                                "role": "member",
+                                "member_id": f"{model_type}_seed{seed}",
+                                "model_type": model_type,
+                                "seed": seed,
+                                "MSE": float("nan"),
+                                "MAE": float("nan"),
+                                "MAPE (%)": float("nan"),
+                                "RMSE": float("nan"),
+                                "train_loss_final": float("nan"),
+                                "val_loss_final": float("nan"),
+                                "runtime_sec": float("nan"),
+                                "status": "error",
+                                "error": str(exc),
+                            }
+                        )
+                    done_members += 1
+                    if progress_callback:
+                        progress_callback(done_members, total_members, f"{strategy} members")
+
+        scope_members: Dict[str, List[Dict[str, Any]]] = {"half_1": [], "half_2": [], "all_members": []}
+        for out in member_outputs:
+            scope_members[out["scope"]].append(out["result"])
+            scope_members["all_members"].append(out["result"])
+
+        for scope_name, member_results in scope_members.items():
+            if not member_results:
+                continue
+            ensemble_preds = ensemble_mean_one_step_predict(
+                member_results,
+                np.concatenate([train_vals, test_vals]),
+                start_idx=len(train_vals),
+            )
+            ens_metrics = compute_metrics(test_vals, ensemble_preds)
+            rows.append(
+                {
+                    "experiment_mode": "parallel_independent",
+                    "strategy": strategy,
+                    "scope": scope_name,
+                    "role": "ensemble",
+                    "member_id": "mean_fusion",
+                    "model_type": "fusion",
+                    "seed": float("nan"),
+                    "MSE": ens_metrics["MSE"],
+                    "MAE": ens_metrics["MAE"],
+                    "MAPE (%)": ens_metrics["MAPE (%)"],
+                    "RMSE": ens_metrics["RMSE"],
+                    "train_loss_final": float("nan"),
+                    "val_loss_final": float("nan"),
+                    "runtime_sec": float("nan"),
+                    "status": "ok",
+                    "error": "",
+                }
+            )
+
+    if progress_callback:
+        progress_callback(total_members, total_members, "Done")
+    return pd.DataFrame(rows)
+
+
+def sequential_residual_ensemble_study(
+    strategy_data: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    model_types: List[str],
+    fixed_params: Dict[str, Any],
+    normalization: str = "minmax",
+    seeds: List[int] | None = None,
+    num_seeds: int = 5,
+    progress_callback=None,
+) -> pd.DataFrame:
+    """Sequential residual-chain ensemble (boosting-like)."""
+    rows: List[Dict[str, Any]] = []
+    if not model_types:
+        return pd.DataFrame(rows)
+
+    seed_list = _normalize_seed_list(seeds, num_seeds)
+    total_steps = len(strategy_data) * len(model_types)
+    done_steps = 0
+
+    for strategy, data_pair in strategy_data.items():
+        train_vals, test_vals = data_pair
+        residual_train = train_vals.astype(float).copy()
+        residual_test = test_vals.astype(float).copy()
+        ensemble_pred = np.zeros_like(test_vals, dtype=float)
+
+        for stage_idx, model_type in enumerate(model_types, start=1):
+            seed = int(seed_list[(stage_idx - 1) % len(seed_list)])
+            started = perf_counter()
+            kwargs = {k: v for k, v in fixed_params.items()}
+            kwargs["normalization"] = normalization
+            kwargs["model_type"] = model_type
+            kwargs["random_seed"] = seed
+
+            try:
+                result = train_gru(residual_train, **kwargs)
+                residual_full = np.concatenate([residual_train, residual_test])
+                stage_test_pred = gru_one_step_predict(result, residual_full, start_idx=len(residual_train))
+                stage_train_pred = gru_one_step_predict(result, residual_train, start_idx=0)
+
+                ensemble_pred = ensemble_pred + stage_test_pred
+                residual_train = residual_train - stage_train_pred
+                residual_test = residual_test - stage_test_pred
+
+                cumulative_metrics = compute_metrics(test_vals, ensemble_pred)
+                rows.append(
+                    {
+                        "experiment_mode": "sequential_residual",
+                        "strategy": strategy,
+                        "scope": "full_train",
+                        "role": "stage",
+                        "member_id": f"stage_{stage_idx}",
+                        "model_type": model_type,
+                        "seed": seed,
+                        "MSE": cumulative_metrics["MSE"],
+                        "MAE": cumulative_metrics["MAE"],
+                        "MAPE (%)": cumulative_metrics["MAPE (%)"],
+                        "RMSE": cumulative_metrics["RMSE"],
+                        "train_loss_final": (
+                            float(result["train_loss"][-1]) if result.get("train_loss") else float("nan")
+                        ),
+                        "val_loss_final": (
+                            float(result["val_loss"][-1]) if result.get("val_loss") else float("nan")
+                        ),
+                        "runtime_sec": float(perf_counter() - started),
+                        "status": "ok",
+                        "error": "",
+                    }
+                )
+            except Exception as exc:
+                rows.append(
+                    {
+                        "experiment_mode": "sequential_residual",
+                        "strategy": strategy,
+                        "scope": "full_train",
+                        "role": "stage",
+                        "member_id": f"stage_{stage_idx}",
+                        "model_type": model_type,
+                        "seed": seed,
+                        "MSE": float("nan"),
+                        "MAE": float("nan"),
+                        "MAPE (%)": float("nan"),
+                        "RMSE": float("nan"),
+                        "train_loss_final": float("nan"),
+                        "val_loss_final": float("nan"),
+                        "runtime_sec": float(perf_counter() - started),
+                        "status": "error",
+                        "error": str(exc),
+                    }
+                )
+
+            done_steps += 1
+            if progress_callback:
+                progress_callback(done_steps, total_steps, f"{strategy} stage {stage_idx}")
+
+        final_metrics = compute_metrics(test_vals, ensemble_pred)
+        rows.append(
+            {
+                "experiment_mode": "sequential_residual",
+                "strategy": strategy,
+                "scope": "full_train",
+                "role": "ensemble",
+                "member_id": "sequential_sum",
+                "model_type": "fusion",
+                "seed": float("nan"),
+                "MSE": final_metrics["MSE"],
+                "MAE": final_metrics["MAE"],
+                "MAPE (%)": final_metrics["MAPE (%)"],
+                "RMSE": final_metrics["RMSE"],
+                "train_loss_final": float("nan"),
+                "val_loss_final": float("nan"),
+                "runtime_sec": float("nan"),
+                "status": "ok",
+                "error": "",
+            }
+        )
+
+    if progress_callback:
+        progress_callback(total_steps, total_steps, "Done")
+    return pd.DataFrame(rows)
