@@ -52,7 +52,7 @@ def _gru_train_and_plot(
         ax.tick_params(labelsize=7)
         ax.legend(fontsize="small")
         plt.tight_layout()
-        loss_placeholder.pyplot(fig, use_container_width=True)
+        loss_placeholder.pyplot(fig, width="stretch")
         plt.close(fig)
 
     return train_gru(
@@ -136,6 +136,9 @@ def render_forecasts(
         )
     status_ph.empty()
 
+    runtime_device = str(result.get("device", "cpu")).lower()
+    st.caption(f"Runtime device used: **{runtime_device.upper()}**")
+
     full_series = np.concatenate([train.values, test.values])
     test_preds = gru_one_step_predict(result, full_series, start_idx=len(train))
     future_preds = gru_forecast(result, full_series, steps=future_steps)
@@ -175,7 +178,7 @@ def render_forecasts(
     ax.set_xlabel("Time step")
     ax.legend(fontsize="small")
     plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
     train_loss = result.get("train_loss", [])
@@ -192,7 +195,7 @@ def render_forecasts(
         ax2.yaxis.set_major_formatter(DECIMAL_FMT)
         ax2.legend(fontsize="small")
         plt.tight_layout()
-        loss_ph.pyplot(fig2, use_container_width=True)
+        loss_ph.pyplot(fig2, width="stretch")
         plt.close(fig2)
 
 

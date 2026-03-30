@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from forecasting.inference.predictor import gru_forecast, gru_one_step_predict
+from forecasting.inference.predictor import gru_one_step_predict
 from forecasting.metrics.evaluator import compute_metrics
 from forecasting.training.trainer import train_gru
 from forecasting.utils.common import _get_device
@@ -20,88 +20,6 @@ def _has_finite_core_metrics(metrics: Dict[str, Any]) -> bool:
     except Exception:
         return False
     return bool(np.all(np.isfinite(vals)))
-
-
-def hyperparameter_sweep(
-    train_vals: np.ndarray,
-    test_vals: np.ndarray,
-    param_name: str,
-    param_values: List[Any],
-    fixed_params: Dict[str, Any],
-    normalization: str = "minmax",
-    progress_callback=None,
-    epoch_callback=None,
-) -> pd.DataFrame:
-    """Train separate models sweeping *param_name* over *param_values*."""
-    rows = []
-    total = len(param_values)
-
-    for i, val in enumerate(param_values):
-        if progress_callback:
-            progress_callback(i, total, f"{param_name}={val}")
-
-        kwargs = {k: v for k, v in fixed_params.items()}
-        kwargs[param_name] = val
-        kwargs["normalization"] = normalization
-        kwargs["epoch_callback"] = epoch_callback
-
-        try:
-            result = train_gru(train_vals, **kwargs)
-            test_preds = gru_forecast(result, train_vals, steps=len(test_vals))
-            metrics = compute_metrics(test_vals, test_preds)
-        except Exception:
-            metrics = {
-                "MSE": float("nan"),
-                "MAE": float("nan"),
-                "MAPE (%)": float("nan"),
-                "RMSE": float("nan"),
-            }
-
-        rows.append({param_name: val, **metrics})
-
-    if progress_callback:
-        progress_callback(total, total, "Done")
-
-    return pd.DataFrame(rows)
-
-
-def normalization_study(
-    train_vals: np.ndarray,
-    test_vals: np.ndarray,
-    fixed_params: Dict[str, Any],
-    progress_callback=None,
-    epoch_callback=None,
-) -> pd.DataFrame:
-    """Train the model with Min-Max, Z-score, and no normalization; compare metrics."""
-    configs = [("minmax", "Min-Max"), ("zscore", "Z-score"), ("none", "None")]
-    rows = []
-
-    for i, (mode, label) in enumerate(configs):
-        if progress_callback:
-            progress_callback(i, len(configs), label)
-
-        kwargs = {k: v for k, v in fixed_params.items()}
-        kwargs["normalization"] = mode
-        kwargs["epoch_callback"] = epoch_callback
-
-        try:
-            result = train_gru(train_vals, **kwargs)
-            test_preds = gru_forecast(result, train_vals, steps=len(test_vals))
-            metrics = compute_metrics(test_vals, test_preds)
-        except Exception:
-            metrics = {
-                "MSE": float("nan"),
-                "MAE": float("nan"),
-                "MAPE (%)": float("nan"),
-                "RMSE": float("nan"),
-            }
-
-        rows.append({"Normalization": label, **metrics})
-
-    if progress_callback:
-        progress_callback(len(configs), len(configs), "Done")
-
-    return pd.DataFrame(rows).set_index("Normalization")
 
 
 def model_strategy_overview(

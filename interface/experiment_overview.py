@@ -48,7 +48,7 @@ def render_model_strategy_overview(results_df, bar_metric="RMSE", heatmap_metric
         )
         .highlight_min(subset=existing, axis=0, color="#d4edda")
         .highlight_max(subset=existing, axis=0, color="#f8d7da"),
-        use_container_width=True,
+        width="stretch",
     )
 
     n = len(hm_metrics)
@@ -85,7 +85,7 @@ def render_model_strategy_overview(results_df, bar_metric="RMSE", heatmap_metric
         axes_flat[idx].axis("off")
 
     plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
     chosen = bar_metric if bar_metric in existing else existing[0]
@@ -109,7 +109,7 @@ def render_model_strategy_overview(results_df, bar_metric="RMSE", heatmap_metric
     ax2.set_title(f"Model vs strategy comparison ({chosen})")
     ax2.legend(fontsize="small", ncols=min(len(models), 3))
     plt.tight_layout()
-    st.pyplot(fig2, use_container_width=True)
+    st.pyplot(fig2, width="stretch")
     plt.close(fig2)
 
 
@@ -249,7 +249,7 @@ def render_experiment_overview_tab(df_with_missing, cfg):
                     ax.tick_params(labelsize=7)
                     ax.legend(fontsize="x-small")
                     _plt.tight_layout()
-                    overview_loss_ph.pyplot(fig, use_container_width=True)
+                    overview_loss_ph.pyplot(fig, width="stretch")
                     _plt.close(fig)
 
                 with st.spinner("Running model x strategy overview experiment…"):

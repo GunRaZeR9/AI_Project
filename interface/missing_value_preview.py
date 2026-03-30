@@ -146,7 +146,7 @@ def render_preview(df, default_col=None, fitted_imputer=None):
                 ax.set_xlabel("Sampled row", fontsize=8)
                 ax.tick_params(labelsize=7)
                 plt.tight_layout()
-                col_ui.pyplot(fig, use_container_width=True)
+                col_ui.pyplot(fig, width="stretch")
                 plt.close(fig)
 
 

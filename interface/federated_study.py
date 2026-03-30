@@ -48,6 +48,31 @@ def _sorted_model_ids(model_ids):
     return sorted(model_ids, key=lambda m: (m != "global_aggregated", m))
 
 
+def _federated_runtime_device_summary(result: dict) -> str:
+    if not result:
+        return "CPU"
+
+    devices = []
+    local_models = result.get("local_models", [])
+    for model_result in local_models:
+        if not isinstance(model_result, dict):
+            continue
+        dev = str(model_result.get("device", "")).strip().lower()
+        if dev:
+            devices.append(dev)
+
+    global_result = result.get("global_model_result")
+    if isinstance(global_result, dict):
+        gdev = str(global_result.get("device", "")).strip().lower()
+        if gdev:
+            devices.append(gdev)
+
+    unique_devices = sorted(set(devices))
+    if not unique_devices:
+        return "CPU"
+    return " + ".join(d.upper() for d in unique_devices)
+
+
 def render_live_federated_training_dashboard(
     epoch_df: pd.DataFrame,
     round_df: pd.DataFrame,
@@ -116,11 +141,10 @@ def render_live_federated_training_dashboard(
                 },
                 na_rep="N/A",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
-        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(14, 4.8))
-        trend_ax, round_ax = axes
+        fig, trend_ax = plt.subplots(nrows=1, ncols=1, figsize=(14, 4.8))
 
         for model_id in _sorted_model_ids(round_df_clean["model_id"].dropna().unique().tolist()):
             m_df = round_df_clean[round_df_clean["model_id"] == model_id].sort_values("round")
@@ -148,20 +172,9 @@ def render_live_federated_training_dashboard(
         if handles:
             trend_ax.legend(loc="best", fontsize=8)
 
-        round_sorted = latest_round_df.sort_values(plot_metric, ascending=True, na_position="last")
-        bar_x = round_sorted["model_id"].astype(str).tolist()
-        bar_y = round_sorted[plot_metric].astype(float).tolist()
-        bar_colors = ["#d1495b" if m == "global_aggregated" else "#457b9d" for m in bar_x]
-        round_ax.bar(bar_x, bar_y, color=bar_colors, alpha=0.9)
-        round_ax.set_title(f"Round {latest_round} snapshot ({plot_metric})")
-        round_ax.set_xlabel("Model")
-        round_ax.set_ylabel(plot_metric)
-        round_ax.grid(alpha=0.2, linestyle="--", axis="y")
-        round_ax.tick_params(axis="x", labelrotation=25)
-
         fig.suptitle("Federated training live monitor", y=1.03)
         plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(fig, width="stretch")
         plt.close(fig)
 
 
@@ -214,7 +227,7 @@ def render_strategy_round_metric_overview(user_round_df: pd.DataFrame, strategy_
         fig.legend(handles, labels, loc="upper center", ncol=min(4, len(labels)), frameon=True)
     fig.suptitle(f"Round metrics by model - {strategy_label}", y=1.02)
     plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
     st.dataframe(
@@ -228,7 +241,7 @@ def render_strategy_round_metric_overview(user_round_df: pd.DataFrame, strategy_
             },
             na_rep="N/A",
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -387,7 +400,7 @@ def render_observed_vs_predicted_federated(curves: dict, key_prefix: str = "fed"
         fig.legend(handles, labels, loc="upper center", ncol=2, frameon=True)
     fig.suptitle("Observed vs Predicted Curves Per Federated Model", y=1.01)
     plt.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
 
@@ -591,7 +604,7 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
         if strategy_errors:
             st.warning("Some strategies failed. See details below.")
             err_rows = [{"strategy": _strategy_name(s), "error": e} for s, e in strategy_errors.items()]
-            st.dataframe(pd.DataFrame(err_rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(err_rows), width="stretch")
 
         if not strategy_results:
             st.error("No strategy produced a valid federated result.")
@@ -606,6 +619,7 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
             st.markdown(f"## {label}")
             chosen = strategy_results[strategy]
             key_prefix = f"fed_{strategy}"
+            st.caption(f"Runtime device(s): **{_federated_runtime_device_summary(chosen)}**")
 
             strategy_results_df = chosen.get("results_df", pd.DataFrame())
             if strategy_results_df is not None and not strategy_results_df.empty:
@@ -623,7 +637,7 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
                         },
                         na_rep="N/A",
                     ),
-                    use_container_width=True,
+                    width="stretch",
                 )
 
             strategy_user_round_df = chosen.get("user_round_metrics_df", pd.DataFrame())
@@ -667,6 +681,7 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
         if strategy_results:
             fig, ax = plt.subplots(figsize=(14, 5.5))
             strategy_plot_count = 0
+            plotted_series = {}
 
             for strategy in STRATEGIES:
                 if strategy not in strategy_results:
@@ -698,6 +713,11 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
                     label=label,
                     alpha=0.88,
                 )
+                plotted_series[strategy] = {
+                    "label": label,
+                    "rounds": round_values,
+                    "values": y_values,
+                }
                 strategy_plot_count += 1
 
             if strategy_plot_count > 0:
@@ -723,8 +743,36 @@ def render_federated_study_tab(df_for_training, cfg, impute_strategy, df_with_mi
                 if handles:
                     ax.legend(loc="best", fontsize=10, framealpha=0.95, ncol=2)
 
+                # Focus y-axis on strongest final-round strategies so small performance gaps remain visible.
+                final_values = []
+                for strategy in STRATEGIES:
+                    if strategy not in plotted_series:
+                        continue
+                    vals = plotted_series[strategy]["values"]
+                    if len(vals) > 0:
+                        final_values.append((strategy, float(vals.iloc[-1])))
+
+                if final_values:
+                    final_values.sort(key=lambda x: x[1])
+                    focus_count = min(4, len(final_values))
+                    focus_strategies = {s for s, _ in final_values[:focus_count]}
+
+                    focus_points = []
+                    for strategy in focus_strategies:
+                        vals = plotted_series[strategy]["values"].astype(float).values
+                        finite_vals = vals[np.isfinite(vals)]
+                        if finite_vals.size:
+                            focus_points.extend(finite_vals.tolist())
+
+                    if focus_points:
+                        y_min = float(np.min(focus_points))
+                        y_max = float(np.max(focus_points))
+                        span = y_max - y_min
+                        pad = 0.08 * span if span > 0 else 0.03 * max(abs(y_max), 1.0)
+                        ax.set_ylim(y_min - pad, y_max + pad)
+
                 plt.tight_layout()
-                st.pyplot(fig, use_container_width=True)
+                st.pyplot(fig, width="stretch")
                 plt.close(fig)
             else:
                 st.info("No global aggregated model metrics available for comparison across strategies.")

@@ -5,9 +5,7 @@ from interface import (
     render_experiment_overview_tab,
     render_federated_study_tab,
     render_gru_forecast_tab,
-    render_hyperparameter_analysis_tab,
     render_missing_value_preview_tab,
-    render_normalization_study_tab,
     render_sidebar,
 )
 
@@ -104,11 +102,9 @@ st.caption(
     f"Target: **{cfg['target_col']}**"
 )
 
-(tab_forecast, tab_hp, tab_norm, tab_overview, tab_federated, tab_preview) = st.tabs(
+(tab_forecast, tab_overview, tab_federated, tab_preview) = st.tabs(
     [
         "GRU Forecast",
-        "Hyperparameter Analysis",
-        "Normalization Study",
         "Experiment Overview",
         "Federated Learning",
         "Missing Value Preview",
@@ -117,12 +113,6 @@ st.caption(
 
 with tab_forecast:
     render_gru_forecast_tab(df_for_training=df_for_training, cfg=cfg, impute_strategy=impute_strategy)
-
-with tab_hp:
-    render_hyperparameter_analysis_tab(df_for_training=df_for_training, cfg=cfg, impute_strategy=impute_strategy)
-
-with tab_norm:
-    render_normalization_study_tab(df_for_training=df_for_training, cfg=cfg, impute_strategy=impute_strategy)
 
 with tab_overview:
     render_experiment_overview_tab(df_with_missing=df_with_missing, cfg=cfg)

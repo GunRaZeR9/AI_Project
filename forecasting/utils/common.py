@@ -35,7 +35,7 @@ def _get_device() -> str:
     if forced in {"cpu", "cuda"}:
         return forced
 
-    use_gpu = os.environ.get("FORECAST_USE_GPU", "0").strip().lower() in {"1", "true", "yes", "on"}
+    use_gpu = os.environ.get("FORECAST_USE_GPU", "1").strip().lower() in {"1", "true", "yes", "on"}
     if not use_gpu:
         return "cpu"
 
