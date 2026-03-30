@@ -1,5 +1,8 @@
 -r project_requirements.txt
 
 # Install a ROCm-matched PyTorch wheel separately after this base install.
-# Example only (do not run blindly; match your ROCm and Python versions):
-# pip install torch torchvision torchaudio --index-url <official-pytorch-rocm-index>
+# Tested for ROCm 7.2:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+#
+# If your GPU is detected as gfx1036, set this in your shell before preflight/training:
+# export HSA_OVERRIDE_GFX_VERSION=10.3.0
