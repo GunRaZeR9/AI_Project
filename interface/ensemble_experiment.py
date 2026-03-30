@@ -4,6 +4,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import streamlit as st
 
 from data_processing import STRATEGIES, process_for_viz
@@ -60,19 +61,53 @@ def _render_ensemble_results(results_df):
             f"RMSE={best_row.get('RMSE', float('nan')):.6f}"
         )
 
-    if not ensemble_only.empty and "RMSE" in ensemble_only.columns:
-        fig, ax = plt.subplots(figsize=(10, 3.5))
-        labels = [
-            f"{r.get('strategy', '')}|{r.get('experiment_mode', '')}|{r.get('scope', '')}"
-            for _, r in ensemble_only.iterrows()
-        ]
-        vals = ensemble_only["RMSE"].astype(float).values
-        x = np.arange(len(vals))
-        ax.bar(x, vals, color="#2a6f97")
-        ax.set_title("Ensemble RMSE comparison")
-        ax.set_ylabel("RMSE")
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=25, ha="right", fontsize=8)
+    model_perf = results_df[
+        (results_df["status"] == "ok")
+        & (results_df["role"].isin(["member", "stage"]))
+        & results_df["RMSE"].notna()
+    ].copy()
+    if not model_perf.empty:
+        order_cols = [c for c in ["strategy", "model_type", "seed", "member_id"] if c in model_perf.columns]
+        model_perf = model_perf.sort_values(order_cols).copy()
+        model_perf["run_idx"] = model_perf.groupby(["experiment_mode", "strategy"]).cumcount() + 1
+
+        modes = list(model_perf["experiment_mode"].dropna().unique())
+        fig, axes = plt.subplots(len(modes), 1, figsize=(13, max(4.2, 4.0 * len(modes))), squeeze=False)
+
+        for idx, mode in enumerate(modes):
+            ax = axes[idx, 0]
+            sub = model_perf[model_perf["experiment_mode"] == mode].copy()
+
+            strategies = sorted(sub["strategy"].dropna().unique())
+            for strategy in strategies:
+                strat_data = sub[sub["strategy"] == strategy].sort_values("run_idx")
+                if strat_data.empty:
+                    continue
+                x = strat_data["run_idx"].values.astype(int)
+                y = strat_data["RMSE"].values.astype(float)
+                ax.plot(
+                    x,
+                    y,
+                    marker="o",
+                    linewidth=2.0,
+                    markersize=5,
+                    alpha=0.95,
+                    label=STRATEGY_LABELS.get(str(strategy), str(strategy)),
+                )
+
+            if not sub.empty:
+                y_min = float(sub["RMSE"].min())
+                y_max = float(sub["RMSE"].max())
+                pad = max(1e-6, (y_max - y_min) * 0.1)
+                ax.set_ylim(y_min - pad, y_max + pad)
+
+            ax.set_title(f"{mode} | Strategy RMSE trajectory")
+            ax.set_xlabel("Run")
+            ax.set_ylabel("RMSE")
+            ax.set_xticks(sorted(sub["run_idx"].unique()))
+            ax.grid(True, linestyle="--", alpha=0.35)
+            ax.legend(loc="upper left", ncols=2, fontsize=9, title="Strategy")
+
         plt.tight_layout()
         st.pyplot(fig, width="stretch")
         plt.close(fig)
@@ -91,7 +126,8 @@ def _render_ensemble_results(results_df):
 def render_ensemble_experiment_tab(df_with_missing, cfg):
     st.subheader("Ensemble Experiment")
     st.caption(
-        "Run independent (parallel members) or sequential (residual-chain) ensembles "
+        "Run independent base models with a trained final fusion decision model, "
+        "or run a strict sequential chain where each stage consumes original input plus previous output, "
         "while keeping dataset size and core hyperparameters from the sidebar."
     )
 
@@ -99,7 +135,11 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
         "Ensemble topology",
         options=["parallel_independent", "sequential_residual"],
         horizontal=True,
-        format_func=lambda m: "Parallel independent" if m == "parallel_independent" else "Sequential residual chain",
+        format_func=lambda m: (
+            "Independent models + final fusion"
+            if m == "parallel_independent"
+            else "Sequential chained pipeline (no fusion)"
+        ),
         key="ensemble_topology",
     )
 
@@ -119,19 +159,17 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
     )
 
     num_seeds = st.slider("Number of seeds", min_value=2, max_value=10, value=5, step=1)
-    max_workers = st.slider(
-        "Parallel workers (independent mode)",
-        min_value=1,
-        max_value=4,
-        value=2,
-        step=1,
-        help="Used only for independent mode. GPU runtime may auto-fallback to single worker.",
-    )
 
-    planned_members = len(selected_models) * num_seeds * 2 * max(len(selected_strategies), 1)
+    planned_members = len(selected_models) * num_seeds * max(len(selected_strategies), 1)
     st.caption(
         f"Estimated members: {planned_members} "
-        f"({len(selected_models)} models x {num_seeds} seeds x 2 train halves x {len(selected_strategies)} strategies)"
+        f"({len(selected_models)} models x {num_seeds} seeds x {len(selected_strategies)} strategies)"
+    )
+
+    st.caption(
+        "Mode details: Parallel mode trains members independently on the same data and applies fusion once. "
+        "Sequential mode is strictly chained: stage input = original input + previous stage output, "
+        "and final output is the terminal stage (no fusion step)."
     )
 
     run_ensemble = st.button("▶ Run Ensemble Experiment", type="primary", key="btn_ensemble")
@@ -192,9 +230,42 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
         }
 
         progress = st.progress(0, text="Preparing ensemble runs…")
+        live_epoch_text = st.empty()
+        live_table = st.empty()
+        live_rows = []
 
         def _cb(done, total, label):
             progress.progress(done / max(total, 1), text=f"{label}…")
+
+        def _epoch_cb(evt):
+            live_epoch_text.caption(
+                "Live epoch: "
+                f"mode={evt.get('experiment_mode', '')} | "
+                f"strategy={evt.get('strategy', '')} | "
+                f"member={evt.get('member_id', '')} | "
+                f"epoch={evt.get('epoch', '')} | "
+                f"train={evt.get('train_loss', float('nan')):.6f} | "
+                f"val={evt.get('val_loss', float('nan')):.6f}"
+            )
+
+        def _member_cb(row):
+            live_rows.append(
+                {
+                    "experiment_mode": row.get("experiment_mode"),
+                    "strategy": row.get("strategy"),
+                    "role": row.get("role"),
+                    "member_id": row.get("member_id"),
+                    "model_type": row.get("model_type"),
+                    "seed": row.get("seed"),
+                    "RMSE": row.get("RMSE"),
+                    "train_loss_final": row.get("train_loss_final"),
+                    "val_loss_final": row.get("val_loss_final"),
+                    "status": row.get("status"),
+                }
+            )
+            live_df = pd.DataFrame(live_rows)
+            if not live_df.empty:
+                live_table.dataframe(live_df, width="stretch")
 
         with st.spinner("Running ensemble experiment…"):
             if ensemble_mode == "parallel_independent":
@@ -204,8 +275,9 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
                     fixed_params=fixed_params,
                     normalization=cfg["normalization"],
                     num_seeds=num_seeds,
-                    max_workers=max_workers,
                     progress_callback=_cb,
+                    epoch_callback=_epoch_cb,
+                    member_callback=_member_cb,
                 )
             else:
                 result_df = sequential_residual_ensemble_study(
@@ -215,6 +287,8 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
                     normalization=cfg["normalization"],
                     num_seeds=num_seeds,
                     progress_callback=_cb,
+                    epoch_callback=_epoch_cb,
+                    member_callback=_member_cb,
                 )
 
         progress.progress(1.0, text="Done.")

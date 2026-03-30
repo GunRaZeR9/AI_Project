@@ -188,6 +188,77 @@ def render_sidebar(full_df, all_cols, total_rows):
             help="L1 regularization added to the training loss each step.",
         )
 
+        st.header("Learning rate schedule")
+        lr_scheduler_val = st.selectbox(
+            "Learning rate scheduler",
+            options=["constant", "step", "exponential", "cosine", "warmup_decay"],
+            index=3,  # Default to cosine annealing (often works well)
+            help="Strategy for adjusting learning rate during training. "
+            "'constant' = fixed LR, 'step' = discrete drops, 'exponential' = smooth decay, "
+            "'cosine' = cosine annealing, 'warmup_decay' = linear warmup then decay.",
+        )
+
+        # Conditional parameters based on scheduler type
+        lr_scheduler_kwargs = {}
+        if lr_scheduler_val == "step":
+            step_size = st.slider(
+                "Step size (epochs)",
+                min_value=1,
+                max_value=50,
+                value=max(1, epochs_val // 4),
+                step=1,
+                help="Number of epochs between each learning rate reduction.",
+            )
+            gamma = st.slider(
+                "Multiplicative factor (gamma)",
+                min_value=0.01,
+                max_value=0.99,
+                value=0.1,
+                step=0.01,
+                help="Factor to multiply LR by at each step.",
+            )
+            lr_scheduler_kwargs = {"step_size": step_size, "gamma": gamma}
+        elif lr_scheduler_val == "exponential":
+            decay_rate = st.slider(
+                "Decay rate",
+                min_value=0.0,
+                max_value=0.1,
+                value=0.01,
+                step=0.001,
+                help="Rate of exponential decay per epoch.",
+            )
+            lr_scheduler_kwargs = {"decay_rate": decay_rate}
+        elif lr_scheduler_val == "cosine":
+            min_lr = st.number_input(
+                "Minimum learning rate",
+                min_value=1e-8,
+                max_value=1e-3,
+                value=1e-6,
+                step=1e-7,
+                format="%.2e",
+                help="Minimum LR reached at the end of cosine annealing.",
+            )
+            lr_scheduler_kwargs = {"min_lr": min_lr}
+        elif lr_scheduler_val == "warmup_decay":
+            warmup_epochs = st.slider(
+                "Warmup epochs",
+                min_value=1,
+                max_value=max(2, epochs_val // 5),
+                value=max(1, epochs_val // 10),
+                step=1,
+                help="Number of epochs to linearly increase LR.",
+            )
+            warmup_decay_type = st.selectbox(
+                "Decay type (after warmup)",
+                options=["cosine", "step", "exponential"],
+                index=0,
+                help="Type of decay schedule to apply after warmup phase.",
+            )
+            lr_scheduler_kwargs = {
+                "warmup_epochs": warmup_epochs,
+                "decay_type": warmup_decay_type,
+            }
+
     return {
         "max_rows": max_rows,
         "df_clean": df_clean,
@@ -210,4 +281,6 @@ def render_sidebar(full_df, all_cols, total_rows):
         "loss_fn_name": loss_fn_val,
         "weight_decay": weight_decay_val,
         "l1_lambda": l1_lambda_val,
+        "lr_scheduler_type": lr_scheduler_val,
+        "lr_scheduler_kwargs": lr_scheduler_kwargs,
     }

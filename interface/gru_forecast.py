@@ -33,6 +33,8 @@ def _gru_train_and_plot(
     l1_lambda=0.0,
     val_fraction=0.1,
     model_type="gru",
+    lr_scheduler_type="constant",
+    lr_scheduler_kwargs=None,
 ):
     def _epoch_cb(epoch_idx, train_l, val_l):
         status_placeholder.caption(
@@ -72,6 +74,8 @@ def _gru_train_and_plot(
         val_fraction=val_fraction,
         model_type=model_type,
         epoch_callback=_epoch_cb,
+        lr_scheduler_type=lr_scheduler_type,
+        lr_scheduler_kwargs=lr_scheduler_kwargs or {},
         **DEFAULT_GRU_PARAMS,
     )
 
@@ -95,6 +99,8 @@ def render_forecasts(
     val_fraction=0.1,
     model_type="gru",
     future_steps=50,
+    lr_scheduler_type="constant",
+    lr_scheduler_kwargs=None,
 ):
     if target_col not in df.columns:
         st.error(f"Column '{target_col}' not found.")
@@ -133,6 +139,8 @@ def render_forecasts(
             l1_lambda=l1_lambda,
             val_fraction=val_fraction,
             model_type=model_type,
+            lr_scheduler_type=lr_scheduler_type,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
         )
     status_ph.empty()
 
@@ -259,4 +267,6 @@ def render_gru_forecast_tab(df_for_training, cfg, impute_strategy):
             val_fraction=state_cfg["val_fraction"],
             model_type=state_cfg["model_type"],
             future_steps=state_cfg["future_steps"],
+            lr_scheduler_type=state_cfg["lr_scheduler_type"],
+            lr_scheduler_kwargs=state_cfg["lr_scheduler_kwargs"],
         )

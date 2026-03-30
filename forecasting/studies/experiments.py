@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 
-from forecasting.inference.predictor import ensemble_mean_one_step_predict, gru_one_step_predict
+from forecasting.inference.predictor import gru_one_step_predict
 from forecasting.metrics.evaluator import compute_metrics
 from forecasting.training.trainer import train_gru
 from forecasting.utils.common import _get_device, split_train_temporal_halves
@@ -491,6 +490,29 @@ def _member_train_eval(
     }
 
 
+def _fit_linear_fusion(features: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, float]:
+    x = np.asarray(features, dtype=float)
+    y = np.asarray(target, dtype=float)
+    if x.ndim != 2 or y.ndim != 1 or x.shape[0] != y.shape[0]:
+        raise ValueError("Invalid feature/target shapes for linear fusion.")
+    x_aug = np.column_stack([x, np.ones(len(x), dtype=float)])
+    coef, *_ = np.linalg.lstsq(x_aug, y, rcond=None)
+    return coef[:-1], float(coef[-1])
+
+
+def _predict_linear_fusion(features: np.ndarray, weights: np.ndarray, bias: float) -> np.ndarray:
+    x = np.asarray(features, dtype=float)
+    return x @ weights + float(bias)
+
+
+def _safe_rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    yt = np.asarray(y_true, dtype=float)
+    yp = np.asarray(y_pred, dtype=float)
+    if yt.shape != yp.shape or yt.size == 0:
+        return float("nan")
+    return float(np.sqrt(np.mean((yt - yp) ** 2)))
+
+
 def parallel_independent_ensemble_study(
     strategy_data: Dict[str, Tuple[np.ndarray, np.ndarray]],
     model_types: List[str],
@@ -498,89 +520,102 @@ def parallel_independent_ensemble_study(
     normalization: str = "minmax",
     seeds: List[int] | None = None,
     num_seeds: int = 5,
-    max_workers: int = 2,
     progress_callback=None,
+    epoch_callback=None,
+    member_callback=None,
 ) -> pd.DataFrame:
-    """Independent ensemble where members are trained in parallel across seeds."""
+    """Independent member models + trained final fusion decision model."""
     rows: List[Dict[str, Any]] = []
     seed_list = _normalize_seed_list(seeds, num_seeds)
     if not model_types:
         return pd.DataFrame(rows)
 
-    total_members = len(strategy_data) * len(model_types) * len(seed_list) * 2
+    total_members = len(strategy_data) * len(model_types) * len(seed_list)
     done_members = 0
 
     for strategy, data_pair in strategy_data.items():
         train_vals, test_vals = data_pair
         half_1, half_2 = split_train_temporal_halves(train_vals)
-        member_specs = []
-        for scope_name, scope_train in (("half_1", half_1), ("half_2", half_2)):
-            for model_type in model_types:
-                for seed in seed_list:
-                    member_specs.append((scope_name, scope_train, model_type, int(seed)))
-
-        used_workers = max(1, int(max_workers))
-        if _get_device() == "cuda":
-            used_workers = 1
-
         member_outputs: List[Dict[str, Any]] = []
 
-        def _run_one(spec):
-            scope_name, scope_train, model_type, seed = spec
-            output = _member_train_eval(
-                train_vals=scope_train,
-                test_vals=test_vals,
-                model_type=model_type,
-                seed=seed,
-                normalization=normalization,
-                fixed_params=fixed_params,
-            )
-            output.update(
-                {
-                    "scope": scope_name,
-                    "model_type": model_type,
-                    "seed": seed,
-                }
-            )
-            return output
+        for model_type in model_types:
+            for seed in seed_list:
+                started = perf_counter()
+                kwargs = {k: v for k, v in fixed_params.items()}
+                kwargs["normalization"] = normalization
+                kwargs["model_type"] = model_type
+                kwargs["random_seed"] = int(seed)
 
-        if used_workers == 1:
-            for spec in member_specs:
+                def _epoch_cb_local(epoch_idx, train_l, val_l, _strategy=strategy, _model=model_type, _seed=seed):
+                    if epoch_callback is not None:
+                        epoch_callback(
+                            {
+                                "experiment_mode": "parallel_independent",
+                                "strategy": _strategy,
+                                "role": "member",
+                                "member_id": f"{_model}_seed{_seed}",
+                                "model_type": _model,
+                                "seed": int(_seed),
+                                "epoch": int(epoch_idx) + 1,
+                                "train_loss": float(train_l[-1]) if train_l else float("nan"),
+                                "val_loss": float(val_l[-1]) if val_l else float("nan"),
+                            }
+                        )
+
+                kwargs["epoch_callback"] = _epoch_cb_local
+
                 try:
-                    out = _run_one(spec)
-                    member_outputs.append(out)
-                    metrics = out["metrics"]
+                    result = train_gru(half_1, **kwargs)
+
+                    val_series = np.concatenate([half_1, half_2])
+                    val_preds = gru_one_step_predict(result, val_series, start_idx=len(half_1))
+
+                    test_series = np.concatenate([train_vals, test_vals])
+                    test_preds = gru_one_step_predict(result, test_series, start_idx=len(train_vals))
+
+                    metrics = compute_metrics(test_vals, test_preds)
+                    member_outputs.append(
+                        {
+                            "result": result,
+                            "model_type": model_type,
+                            "seed": int(seed),
+                            "val_preds": val_preds,
+                            "test_preds": test_preds,
+                            "runtime_sec": float(perf_counter() - started),
+                        }
+                    )
                     rows.append(
                         {
                             "experiment_mode": "parallel_independent",
                             "strategy": strategy,
-                            "scope": out["scope"],
+                            "scope": "base_members_half1",
                             "role": "member",
-                            "member_id": f"{out['model_type']}_seed{out['seed']}",
-                            "model_type": out["model_type"],
-                            "seed": out["seed"],
+                            "member_id": f"{model_type}_seed{seed}",
+                            "model_type": model_type,
+                            "seed": seed,
                             "MSE": metrics["MSE"],
                             "MAE": metrics["MAE"],
                             "MAPE (%)": metrics["MAPE (%)"],
                             "RMSE": metrics["RMSE"],
                             "train_loss_final": (
-                                float(out["result"]["train_loss"][-1]) if out["result"].get("train_loss") else float("nan")
+                                float(result["train_loss"][-1]) if result.get("train_loss") else float("nan")
                             ),
                             "val_loss_final": (
-                                float(out["result"]["val_loss"][-1]) if out["result"].get("val_loss") else float("nan")
+                                float(result["val_loss"][-1]) if result.get("val_loss") else float("nan")
                             ),
-                            "runtime_sec": out["runtime_sec"],
+                            "runtime_sec": float(perf_counter() - started),
                             "status": "ok",
                             "error": "",
                         }
                     )
+                    if member_callback is not None:
+                        member_callback(rows[-1])
                 except Exception as exc:
-                    scope_name, _, model_type, seed = spec
                     rows.append(
                         {
                             "experiment_mode": "parallel_independent",
                             "strategy": strategy,
-                            "scope": scope_name,
+                            "scope": "base_members_half1",
                             "role": "member",
                             "member_id": f"{model_type}_seed{seed}",
                             "model_type": model_type,
@@ -591,102 +626,41 @@ def parallel_independent_ensemble_study(
                             "RMSE": float("nan"),
                             "train_loss_final": float("nan"),
                             "val_loss_final": float("nan"),
-                            "runtime_sec": float("nan"),
+                            "runtime_sec": float(perf_counter() - started),
                             "status": "error",
                             "error": str(exc),
                         }
                     )
+                    if member_callback is not None:
+                        member_callback(rows[-1])
+
                 done_members += 1
                 if progress_callback:
                     progress_callback(done_members, total_members, f"{strategy} members")
-        else:
-            with ThreadPoolExecutor(max_workers=used_workers) as executor:
-                futures = {executor.submit(_run_one, spec): spec for spec in member_specs}
-                for future in as_completed(futures):
-                    spec = futures[future]
-                    try:
-                        out = future.result()
-                        member_outputs.append(out)
-                        metrics = out["metrics"]
-                        rows.append(
-                            {
-                                "experiment_mode": "parallel_independent",
-                                "strategy": strategy,
-                                "scope": out["scope"],
-                                "role": "member",
-                                "member_id": f"{out['model_type']}_seed{out['seed']}",
-                                "model_type": out["model_type"],
-                                "seed": out["seed"],
-                                "MSE": metrics["MSE"],
-                                "MAE": metrics["MAE"],
-                                "MAPE (%)": metrics["MAPE (%)"],
-                                "RMSE": metrics["RMSE"],
-                                "train_loss_final": (
-                                    float(out["result"]["train_loss"][-1])
-                                    if out["result"].get("train_loss")
-                                    else float("nan")
-                                ),
-                                "val_loss_final": (
-                                    float(out["result"]["val_loss"][-1]) if out["result"].get("val_loss") else float("nan")
-                                ),
-                                "runtime_sec": out["runtime_sec"],
-                                "status": "ok",
-                                "error": "",
-                            }
-                        )
-                    except Exception as exc:
-                        scope_name, _, model_type, seed = spec
-                        rows.append(
-                            {
-                                "experiment_mode": "parallel_independent",
-                                "strategy": strategy,
-                                "scope": scope_name,
-                                "role": "member",
-                                "member_id": f"{model_type}_seed{seed}",
-                                "model_type": model_type,
-                                "seed": seed,
-                                "MSE": float("nan"),
-                                "MAE": float("nan"),
-                                "MAPE (%)": float("nan"),
-                                "RMSE": float("nan"),
-                                "train_loss_final": float("nan"),
-                                "val_loss_final": float("nan"),
-                                "runtime_sec": float("nan"),
-                                "status": "error",
-                                "error": str(exc),
-                            }
-                        )
-                    done_members += 1
-                    if progress_callback:
-                        progress_callback(done_members, total_members, f"{strategy} members")
 
-        scope_members: Dict[str, List[Dict[str, Any]]] = {"half_1": [], "half_2": [], "all_members": []}
-        for out in member_outputs:
-            scope_members[out["scope"]].append(out["result"])
-            scope_members["all_members"].append(out["result"])
+        if not member_outputs:
+            continue
 
-        for scope_name, member_results in scope_members.items():
-            if not member_results:
-                continue
-            ensemble_preds = ensemble_mean_one_step_predict(
-                member_results,
-                np.concatenate([train_vals, test_vals]),
-                start_idx=len(train_vals),
-            )
-            ens_metrics = compute_metrics(test_vals, ensemble_preds)
+        try:
+            meta_x = np.column_stack([m["val_preds"] for m in member_outputs])
+            meta_y = half_2.astype(float)
+            test_x = np.column_stack([m["test_preds"] for m in member_outputs])
+            weights, bias = _fit_linear_fusion(meta_x, meta_y)
+            fused_test = _predict_linear_fusion(test_x, weights, bias)
+            fused_metrics = compute_metrics(test_vals, fused_test)
             rows.append(
                 {
                     "experiment_mode": "parallel_independent",
                     "strategy": strategy,
-                    "scope": scope_name,
+                    "scope": "fusion_on_half2",
                     "role": "ensemble",
-                    "member_id": "mean_fusion",
-                    "model_type": "fusion",
+                    "member_id": "linear_fusion",
+                    "model_type": "fusion_linear",
                     "seed": float("nan"),
-                    "MSE": ens_metrics["MSE"],
-                    "MAE": ens_metrics["MAE"],
-                    "MAPE (%)": ens_metrics["MAPE (%)"],
-                    "RMSE": ens_metrics["RMSE"],
+                    "MSE": fused_metrics["MSE"],
+                    "MAE": fused_metrics["MAE"],
+                    "MAPE (%)": fused_metrics["MAPE (%)"],
+                    "RMSE": fused_metrics["RMSE"],
                     "train_loss_final": float("nan"),
                     "val_loss_final": float("nan"),
                     "runtime_sec": float("nan"),
@@ -694,6 +668,31 @@ def parallel_independent_ensemble_study(
                     "error": "",
                 }
             )
+            if member_callback is not None:
+                member_callback(rows[-1])
+        except Exception as exc:
+            rows.append(
+                {
+                    "experiment_mode": "parallel_independent",
+                    "strategy": strategy,
+                    "scope": "fusion_on_half2",
+                    "role": "ensemble",
+                    "member_id": "linear_fusion",
+                    "model_type": "fusion_linear",
+                    "seed": float("nan"),
+                    "MSE": float("nan"),
+                    "MAE": float("nan"),
+                    "MAPE (%)": float("nan"),
+                    "RMSE": float("nan"),
+                    "train_loss_final": float("nan"),
+                    "val_loss_final": float("nan"),
+                    "runtime_sec": float("nan"),
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
+            if member_callback is not None:
+                member_callback(rows[-1])
 
     if progress_callback:
         progress_callback(total_members, total_members, "Done")
@@ -708,8 +707,10 @@ def sequential_residual_ensemble_study(
     seeds: List[int] | None = None,
     num_seeds: int = 5,
     progress_callback=None,
+    epoch_callback=None,
+    member_callback=None,
 ) -> pd.DataFrame:
-    """Sequential residual-chain ensemble (boosting-like)."""
+    """Strict chained sequential pipeline: stage input = original input + previous stage output."""
     rows: List[Dict[str, Any]] = []
     if not model_types:
         return pd.DataFrame(rows)
@@ -720,9 +721,11 @@ def sequential_residual_ensemble_study(
 
     for strategy, data_pair in strategy_data.items():
         train_vals, test_vals = data_pair
-        residual_train = train_vals.astype(float).copy()
-        residual_test = test_vals.astype(float).copy()
-        ensemble_pred = np.zeros_like(test_vals, dtype=float)
+        original_train = train_vals.astype(float).copy()
+        original_test = test_vals.astype(float).copy()
+        prev_train_pred = np.zeros_like(original_train, dtype=float)
+        prev_test_pred = np.zeros_like(original_test, dtype=float)
+        final_stage_pred = np.zeros_like(original_test, dtype=float)
 
         for stage_idx, model_type in enumerate(model_types, start=1):
             seed = int(seed_list[(stage_idx - 1) % len(seed_list)])
@@ -732,30 +735,71 @@ def sequential_residual_ensemble_study(
             kwargs["model_type"] = model_type
             kwargs["random_seed"] = seed
 
+            train_input = original_train + prev_train_pred
+            test_input = original_test + prev_test_pred
+
+            def _epoch_cb_local(epoch_idx, train_l, val_l, _strategy=strategy, _model=model_type, _seed=seed, _stage=stage_idx):
+                if epoch_callback is not None:
+                    epoch_callback(
+                        {
+                            "experiment_mode": "sequential_residual",
+                            "strategy": _strategy,
+                            "role": "stage",
+                            "member_id": f"stage_{_stage}",
+                            "model_type": _model,
+                            "seed": int(_seed),
+                            "epoch": int(epoch_idx) + 1,
+                            "train_loss": float(train_l[-1]) if train_l else float("nan"),
+                            "val_loss": float(val_l[-1]) if val_l else float("nan"),
+                        }
+                    )
+
+            kwargs["epoch_callback"] = _epoch_cb_local
+
             try:
-                result = train_gru(residual_train, **kwargs)
-                residual_full = np.concatenate([residual_train, residual_test])
-                stage_test_pred = gru_one_step_predict(result, residual_full, start_idx=len(residual_train))
-                stage_train_pred = gru_one_step_predict(result, residual_train, start_idx=0)
+                result = train_gru(train_input, **kwargs)
 
-                ensemble_pred = ensemble_pred + stage_test_pred
-                residual_train = residual_train - stage_train_pred
-                residual_test = residual_test - stage_test_pred
+                full_chain = np.concatenate([train_input, test_input])
+                stage_chain_test_pred = gru_one_step_predict(result, full_chain, start_idx=len(train_input))
+                stage_chain_train_pred = gru_one_step_predict(result, train_input, start_idx=0)
 
-                cumulative_metrics = compute_metrics(test_vals, ensemble_pred)
+                if stage_chain_test_pred.shape != prev_test_pred.shape:
+                    raise ValueError(
+                        "Sequential chain output shape mismatch on test split: "
+                        f"got {stage_chain_test_pred.shape}, expected {prev_test_pred.shape}"
+                    )
+                if stage_chain_train_pred.shape != prev_train_pred.shape:
+                    raise ValueError(
+                        "Sequential chain output shape mismatch on train split: "
+                        f"got {stage_chain_train_pred.shape}, expected {prev_train_pred.shape}"
+                    )
+
+                # Convert chain predictions back to target space by removing previous-stage contribution.
+                stage_test_pred = stage_chain_test_pred - prev_test_pred
+                stage_train_pred = stage_chain_train_pred - prev_train_pred
+
+                final_stage_pred = stage_test_pred
+                prev_train_pred = stage_train_pred
+                prev_test_pred = stage_test_pred
+
+                stage_metrics = compute_metrics(original_test, stage_test_pred)
                 rows.append(
                     {
                         "experiment_mode": "sequential_residual",
                         "strategy": strategy,
-                        "scope": "full_train",
+                        "scope": "strict_chain_full_train",
                         "role": "stage",
                         "member_id": f"stage_{stage_idx}",
                         "model_type": model_type,
                         "seed": seed,
-                        "MSE": cumulative_metrics["MSE"],
-                        "MAE": cumulative_metrics["MAE"],
-                        "MAPE (%)": cumulative_metrics["MAPE (%)"],
-                        "RMSE": cumulative_metrics["RMSE"],
+                        "MSE": stage_metrics["MSE"],
+                        "MAE": stage_metrics["MAE"],
+                        "MAPE (%)": stage_metrics["MAPE (%)"],
+                        "RMSE": stage_metrics["RMSE"],
+                        "dependency": "original_plus_previous_output",
+                        "prev_output_rmse": _safe_rmse(original_test, prev_test_pred),
+                        "prev_output_preview": np.array2string(prev_test_pred[:3], precision=4, separator=", "),
+                        "stage_output_preview": np.array2string(stage_test_pred[:3], precision=4, separator=", "),
                         "train_loss_final": (
                             float(result["train_loss"][-1]) if result.get("train_loss") else float("nan")
                         ),
@@ -767,12 +811,14 @@ def sequential_residual_ensemble_study(
                         "error": "",
                     }
                 )
+                if member_callback is not None:
+                    member_callback(rows[-1])
             except Exception as exc:
                 rows.append(
                     {
                         "experiment_mode": "sequential_residual",
                         "strategy": strategy,
-                        "scope": "full_train",
+                        "scope": "strict_chain_full_train",
                         "role": "stage",
                         "member_id": f"stage_{stage_idx}",
                         "model_type": model_type,
@@ -788,25 +834,28 @@ def sequential_residual_ensemble_study(
                         "error": str(exc),
                     }
                 )
+                if member_callback is not None:
+                    member_callback(rows[-1])
 
             done_steps += 1
             if progress_callback:
                 progress_callback(done_steps, total_steps, f"{strategy} stage {stage_idx}")
 
-        final_metrics = compute_metrics(test_vals, ensemble_pred)
+        final_metrics = compute_metrics(original_test, final_stage_pred)
         rows.append(
             {
                 "experiment_mode": "sequential_residual",
                 "strategy": strategy,
-                "scope": "full_train",
-                "role": "ensemble",
-                "member_id": "sequential_sum",
-                "model_type": "fusion",
+                "scope": "strict_chain_full_train",
+                "role": "final_output",
+                "member_id": "chain_terminal",
+                "model_type": model_types[-1],
                 "seed": float("nan"),
                 "MSE": final_metrics["MSE"],
                 "MAE": final_metrics["MAE"],
                 "MAPE (%)": final_metrics["MAPE (%)"],
                 "RMSE": final_metrics["RMSE"],
+                "dependency": "strict_chain_no_fusion",
                 "train_loss_final": float("nan"),
                 "val_loss_final": float("nan"),
                 "runtime_sec": float("nan"),
@@ -814,6 +863,8 @@ def sequential_residual_ensemble_study(
                 "error": "",
             }
         )
+        if member_callback is not None:
+            member_callback(rows[-1])
 
     if progress_callback:
         progress_callback(total_steps, total_steps, "Done")

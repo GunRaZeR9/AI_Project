@@ -8,6 +8,7 @@ import numpy as np
 
 from forecasting.models.architectures import _GRUNet, _MODEL_CLASSES
 from forecasting.normalization.scalers import _apply_norm_params, _normalize
+from forecasting.training.lr_scheduler import get_scheduler
 from forecasting.utils.common import _get_device
 
 
@@ -58,8 +59,16 @@ def train_gru(
     device_override: str | None = None,
     random_seed: int | None = None,
     epoch_callback=None,
+    lr_scheduler_type: str = "constant",
+    lr_scheduler_kwargs: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    """Train a GRU/LSTM/RNN model and return a results dictionary."""
+    """Train a GRU/LSTM/RNN model and return a results dictionary.
+    
+    Args:
+        lr_scheduler_type: Type of learning rate scheduler ('constant', 'step', 
+                          'exponential', 'cosine', 'warmup_decay'). Default: 'constant'.
+        lr_scheduler_kwargs: Additional arguments for the scheduler (e.g., {'step_size': 10}).
+    """
     import torch
     import torch.nn as nn
 
@@ -126,6 +135,13 @@ def train_gru(
             model.parameters(), lr=lr, weight_decay=weight_decay
         )
 
+        # Initialize learning rate scheduler
+        if lr_scheduler_kwargs is None:
+            lr_scheduler_kwargs = {}
+        scheduler = get_scheduler(
+            lr_scheduler_type, initial_lr=lr, epochs=epochs, **lr_scheduler_kwargs
+        )
+
         _loss_map = {
             "mse": nn.MSELoss(),
             "rmse": nn.MSELoss(),
@@ -139,6 +155,11 @@ def train_gru(
 
         N = len(X_t)
         for _epoch in range(epochs):
+            # Update learning rate at the start of each epoch
+            current_lr = scheduler.get_lr()
+            for param_group in optimiser.param_groups:
+                param_group["lr"] = current_lr
+
             model.train_mode()
             idx = torch.randperm(N)
             epoch_loss = 0.0
@@ -168,6 +189,9 @@ def train_gru(
                 with torch.no_grad():
                     vl = criterion(model(X_val_t), y_val_t).item()
                 val_loss_hist.append(vl)
+
+            # Advance scheduler to next epoch
+            scheduler.step()
 
             if epoch_callback is not None:
                 epoch_callback(_epoch, list(train_loss_hist), list(val_loss_hist))
@@ -211,5 +235,7 @@ def train_gru(
                 device_override="cpu",
                 random_seed=random_seed,
                 epoch_callback=epoch_callback,
+                lr_scheduler_type=lr_scheduler_type,
+                lr_scheduler_kwargs=lr_scheduler_kwargs,
             )
         raise
