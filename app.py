@@ -2,6 +2,7 @@ import streamlit as st
 
 from data_processing import RF_IMPUTER_CACHE, inject_missing_values, load_dsmts_data
 from interface import (
+    render_custom_plotting_tab,
     render_ensemble_experiment_tab,
     render_experiment_overview_tab,
     render_federated_study_tab,
@@ -103,10 +104,11 @@ st.caption(
     f"Target: **{cfg['target_col']}**"
 )
 
-(tab_forecast, tab_overview, tab_ensemble, tab_federated, tab_preview) = st.tabs(
+(tab_forecast, tab_overview, tab_custom_plotting, tab_ensemble, tab_federated, tab_preview) = st.tabs(
     [
         "GRU Forecast",
         "Experiment Overview",
+        "Custom Plotting",
         "Ensemble Experiment",
         "Federated Learning",
         "Missing Value Preview",
@@ -118,6 +120,9 @@ with tab_forecast:
 
 with tab_overview:
     render_experiment_overview_tab(df_with_missing=df_with_missing, cfg=cfg)
+
+with tab_custom_plotting:
+    render_custom_plotting_tab()
 
 with tab_ensemble:
     render_ensemble_experiment_tab(df_with_missing=df_with_missing, cfg=cfg)

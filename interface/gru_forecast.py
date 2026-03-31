@@ -239,6 +239,8 @@ def render_gru_forecast_tab(df_for_training, cfg, impute_strategy):
             "val_fraction": cfg["val_fraction"],
             "model_type": cfg["model_type"],
             "future_steps": cfg["future_steps"],
+            "lr_scheduler_type": cfg.get("lr_scheduler_type", "constant"),
+            "lr_scheduler_kwargs": cfg.get("lr_scheduler_kwargs", {}),
         }
 
     if "forecast_cfg" in st.session_state:
@@ -267,6 +269,6 @@ def render_gru_forecast_tab(df_for_training, cfg, impute_strategy):
             val_fraction=state_cfg["val_fraction"],
             model_type=state_cfg["model_type"],
             future_steps=state_cfg["future_steps"],
-            lr_scheduler_type=state_cfg["lr_scheduler_type"],
-            lr_scheduler_kwargs=state_cfg["lr_scheduler_kwargs"],
+            lr_scheduler_type=state_cfg.get("lr_scheduler_type", "constant"),
+            lr_scheduler_kwargs=state_cfg.get("lr_scheduler_kwargs", {}),
         )
