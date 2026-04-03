@@ -557,7 +557,11 @@ def render_ensemble_experiment_tab(df_with_missing, cfg):
         skipped = []
         for strat in selected_strategies:
             try:
-                fitted_imp = st.session_state.get("rf_imputer") if strat == "predictive_imputer" else None
+                fitted_imp = (
+                    st.session_state.get(f"rf_imputer_{cfg.get('dataset_choice', 'dsmts')}")
+                    if strat == "predictive_imputer"
+                    else None
+                )
                 _, df_imp, _ = process_for_viz(df_with_missing, strategy=strat, fitted_imputer=fitted_imp)
                 if cfg["target_col"] not in df_imp.columns:
                     skipped.append(f"{strat} (target unavailable)")

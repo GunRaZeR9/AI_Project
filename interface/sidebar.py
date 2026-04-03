@@ -2,7 +2,7 @@ import streamlit as st
 
 from data_processing import (
     STRATEGIES,
-    RF_IMPUTER_CACHE,
+    get_rf_imputer_cache,
     load_imputer,
     train_and_save_imputer,
 )
@@ -10,7 +10,7 @@ from data_processing import (
 from .constants import STRATEGY_LABELS
 
 
-def render_sidebar(full_df, all_cols, total_rows):
+def render_sidebar(full_df, all_cols, total_rows, dataset_choice, dataset_default_target):
     with st.sidebar:
         st.header("Dataset")
         max_rows = st.number_input(
@@ -27,10 +27,14 @@ def render_sidebar(full_df, all_cols, total_rows):
         df_clean = full_df.iloc[-max_rows:].copy()
 
         st.header("Forecast target")
+        default_target = dataset_default_target if dataset_default_target in all_cols else None
+        if default_target is None and "bed1" in all_cols:
+            default_target = "bed1"
+        target_default_idx = all_cols.index(default_target) if default_target in all_cols else 0
         target_col = st.selectbox(
             "Select column to forecast",
             options=all_cols,
-            index=all_cols.index("bed1") if "bed1" in all_cols else 0,
+            index=target_default_idx,
             help="Only the selected column is used as the univariate forecast series.",
         )
 
@@ -45,14 +49,16 @@ def render_sidebar(full_df, all_cols, total_rows):
             missing_rates[target_col] = pct / 100.0
 
         st.header("Predictive imputer cache")
-        cache_exists = RF_IMPUTER_CACHE.exists()
+        imputer_cache_path = get_rf_imputer_cache(dataset_choice)
+        imputer_key = f"rf_imputer_{dataset_choice}"
+        cache_exists = imputer_cache_path.exists()
         st.caption(
-            f"Cache: `{RF_IMPUTER_CACHE.name}` — "
+            f"Cache: `{imputer_cache_path.name}` - "
             + ("**ready ✓**" if cache_exists else "*not trained yet*")
         )
         if st.button(
             "Pre-train & save RF imputer",
-            key="btn_pretrain_rf",
+            key=f"btn_pretrain_rf_{dataset_choice}",
             help=(
                 "Fits the RandomForest IterativeImputer on the current clean dataset "
                 "and saves it to disk. Reuse happens automatically when the "
@@ -61,13 +67,13 @@ def render_sidebar(full_df, all_cols, total_rows):
         ):
             with st.spinner("Training RF imputer (this may take a minute)…"):
                 df_fit = full_df.iloc[-max_rows:].copy().select_dtypes(include=["number"]).dropna()
-                train_and_save_imputer(df_fit, cache_path=RF_IMPUTER_CACHE)
-                st.session_state["rf_imputer"] = load_imputer(RF_IMPUTER_CACHE)
+                train_and_save_imputer(df_fit, cache_path=imputer_cache_path)
+                st.session_state[imputer_key] = load_imputer(imputer_cache_path)
             st.success("RF imputer trained and saved.")
             st.rerun()
 
-        if "rf_imputer" not in st.session_state and cache_exists:
-            st.session_state["rf_imputer"] = load_imputer(RF_IMPUTER_CACHE)
+        if imputer_key not in st.session_state and cache_exists:
+            st.session_state[imputer_key] = load_imputer(imputer_cache_path)
 
         st.header("Imputation for training")
         impute_strategy = st.selectbox(
@@ -283,4 +289,6 @@ def render_sidebar(full_df, all_cols, total_rows):
         "l1_lambda": l1_lambda_val,
         "lr_scheduler_type": lr_scheduler_val,
         "lr_scheduler_kwargs": lr_scheduler_kwargs,
+        "dataset_choice": dataset_choice,
+        "rf_imputer_cache_path": imputer_cache_path,
     }

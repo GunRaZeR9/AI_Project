@@ -8,10 +8,16 @@ import pandas as pd
 # Default path for the cached RF imputer
 RF_IMPUTER_CACHE = Path(__file__).parent / "rf_imputer.joblib"
 
+
+def get_rf_imputer_cache(dataset_key: str) -> Path:
+    """Return a dataset-specific cache path for the RF imputer."""
+    if dataset_key == "dsmts":
+        return RF_IMPUTER_CACHE
+    return Path(__file__).parent / f"rf_imputer_{dataset_key}.joblib"
+
 # Available missing-value strategies used by the app UI
 STRATEGIES = [
     'ffill',
-    'fill_zero',
     'fill_mean',
     'window_mean',
     'predictive_imputer',
@@ -133,8 +139,6 @@ def process_for_viz(df, strategy='fill_mean', window=3, drop_col_threshold=0.65,
     dropped_cols = []
     if strategy == 'ffill':
         X_after = X_before.ffill()
-    elif strategy == 'fill_zero':
-        X_after = X_before.fillna(0)
     elif strategy == 'fill_mean':
         X_after = X_before.fillna(X_before.mean())
     elif strategy == 'window_mean':
@@ -209,6 +213,68 @@ def load_dsmts_data(local_csv: str | None = None) -> pd.DataFrame:
     # Sort chronologically (ascending)
     df = df.sort_index()
     return df
+
+
+def load_bitcoin_historical_data(local_csv: str | None = None) -> pd.DataFrame:
+    """Load the Bitcoin historical OHLCV dataset from KaggleHub.
+
+    Dataset: ``mczielinski/bitcoin-historical-data``
+    """
+    if local_csv is not None:
+        df = pd.read_csv(local_csv)
+    else:
+        try:
+            import kagglehub
+        except ImportError:
+            raise ImportError(
+                "kagglehub is required to download the Bitcoin dataset.\n"
+                'Install it with:  pip install "kagglehub[pandas-datasets]"'
+            )
+
+        dataset_path = kagglehub.dataset_download("mczielinski/bitcoin-historical-data")
+        csv_files = glob.glob(os.path.join(dataset_path, "**", "*.csv"), recursive=True)
+        if not csv_files:
+            raise FileNotFoundError(f"No CSV file found in downloaded dataset at: {dataset_path}")
+
+        preferred = [p for p in csv_files if os.path.basename(p).lower() == "btcusd_1-min_data.csv"]
+        csv_file = preferred[0] if preferred else sorted(csv_files)[0]
+        df = pd.read_csv(csv_file)
+
+    ts_col = next((c for c in df.columns if c.lower() == "timestamp"), None)
+    if ts_col is not None:
+        ts = pd.to_datetime(df[ts_col], unit="s", utc=True, errors="coerce")
+        df[ts_col] = ts.dt.tz_localize(None)
+        df = df.set_index(ts_col)
+    df.index.name = "timestamp"
+
+    # Keep numeric columns only to match the rest of the app's assumptions.
+    df = df.select_dtypes(include=[np.number]).copy()
+    df = df.dropna(how="all")
+    df = df.sort_index()
+    return df
+
+
+DATASETS = {
+    "dsmts": {
+        "label": "DSMTS (patrickfleith)",
+        "loader": load_dsmts_data,
+        "default_target": "bed1",
+        "title": "DSMTS Univariate Time Series Forecasting",
+        "caption": (
+            "Dataset: Dynamical System Multivariate Time Series (DSMTS) - "
+            "17-variable simulated complex dynamical system at 1 Hz."
+        ),
+    },
+    "bitcoin": {
+        "label": "Bitcoin Historical Data (mczielinski)",
+        "loader": load_bitcoin_historical_data,
+        "default_target": "Close",
+        "title": "Bitcoin Univariate Time Series Forecasting",
+        "caption": (
+            "Dataset: Bitcoin historical OHLCV at 1-minute resolution from KaggleHub."
+        ),
+    },
+}
 
 
 def inject_missing_values(

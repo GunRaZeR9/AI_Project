@@ -1,0 +1,104 @@
+\chapter{Implementare și cadru experimental}
+
+Acest capitol descrie implementarea practică a aplicației dezvoltate pentru analiza impactului valorilor lipsă în predicția seriilor de timp. Accentul este pus pe modul în care componentele software au fost integrate într-un flux unitar: încărcarea datelor, injectarea controlată a valorilor lipsă, imputarea, antrenarea modelelor recurente, monitorizarea în timp real și afișarea rezultatelor. În această etapă sunt prezentate infrastructura tehnică și mecanismele de execuție; analiza detaliată a rezultatelor experimentale este tratată separat.
+
+\section{Arhitectura generală a aplicației}
+
+Aplicația este proiectată modular, astfel încât fiecare etapă importantă a procesului de forecasting să poată fi extinsă independent. Din punct de vedere logic, fluxul este împărțit în patru straturi:
+
+\begin{itemize}
+	\item stratul de date: încărcare, curățare, injectare de lipsuri și imputare;
+	\item stratul de modelare: definirea arhitecturilor RNN/LSTM/GRU și antrenarea efectivă;
+	\item stratul de evaluare: calculul metricilor și serializarea rezultatelor pentru comparații ulterioare;
+	\item stratul de prezentare: interfața grafică interactivă pentru configurare și monitorizare.
+\end{itemize}
+
+Această separare permite păstrarea unui cod ușor de întreținut și reduce cuplarea între logicile de preprocesare, antrenare și vizualizare. În practică, modulul de interfață orchestrează rularea experimentelor, iar modulele specializate execută calculele numerice și antrenarea rețelelor.
+
+\section{Tehnologii utilizate}
+
+Implementarea este realizată în Python, cu un ecosistem orientat pe analiză numerică și învățare automată. Prelucrarea seriilor de timp și operațiile tabulare sunt realizate cu \textit{Pandas}~\cite{mckinney2010pandas}, iar calculele vectoriale cu \textit{NumPy}~\cite{harris2020numpy}. Pentru antrenarea rețelelor neurale recurente este utilizat \textit{PyTorch}~\cite{paszke2019pytorch}. Vizualizările sunt generate cu \textit{Matplotlib}~\cite{hunter2007matplotlib}, iar partea de imputare predictivă se bazează pe componente din \textit{scikit-learn}~\cite{pedregosa2011sklearn}, inclusiv estimatorul \textit{Random Forest}~\cite{breiman2001rf}.
+
+Această alegere tehnologică a fost motivată de trei criterii: flexibilitate pentru prototipare, maturitate a bibliotecilor și posibilitatea de a integra rapid componente interactive într-un cadru reproductibil.
+
+\section{Organizarea implementării}
+
+Codul este împărțit pe module funcționale, fiecare responsabil de o etapă distinctă:
+
+\begin{itemize}
+	\item modulele de prelucrare a datelor gestionează încărcarea seturilor DSMTS și Bitcoin, injectarea MCAR și aplicarea strategiilor de imputare;
+	\item modulele de \textit{training} gestionează inițializarea modelelor, ciclurile pe epoci, validarea și păstrarea stărilor;
+	\item modulele de \textit{inference} realizează predicția one-step-ahead și denormalizarea rezultatelor;
+	\item modulele de metrici calculează MSE, MAE, RMSE și MAPE;
+	\item modulele de interfață expun elementele de control, graficele și tabelele de comparație.
+\end{itemize}
+
+Prin această structură, aceeași infrastructură poate susține mai multe moduri de rulare: experiment standard, scenariu federat și scenarii de ansamblu. În plus, codul permite extinderea relativ simplă cu noi strategii de imputare sau noi arhitecturi recurente.
+
+\section{Componentele interfeței interactive}
+
+Interfața este construită ca aplicație interactivă de experimentare, în care utilizatorul controlează direct parametrii principali ai fluxului. Elemente esențiale disponibile în interfață:
+
+\begin{itemize}
+	\item alegerea setului de date și a coloanei țintă;
+	\item controlul procentului de valori lipsă injectate pe variabile;
+	\item selecția strategiei de imputare;
+	\item configurarea hiperparametrilor de antrenare (lungime secvență, \textit{hidden size}, număr de straturi, \textit{dropout}, optimizator, funcție de pierdere, epoci);
+	\item rularea studiilor comparative și exportul rezultatelor în format tabelar.
+\end{itemize}
+
+Avantajul major al interfeței este că transformă protocolul experimental într-un proces observabil și repetabil. Utilizatorul poate modifica o singură variabilă experimentală și poate evalua imediat efectul asupra pierderii la antrenare și asupra metricilor finale.
+
+\section{Vizualizarea valorilor lipsă și compararea imputării}
+
+Un element central al implementării este panoul de previzualizare pentru valori lipsă. Acesta afișează, pentru coloanele selectate, atât seria originală cu lipsuri, cât și seriile reconstruite prin strategii diferite de imputare. Astfel, comparația nu rămâne doar numerică, ci devine și vizuală.
+
+Din perspectivă metodologică, acest modul sprijină analiza calitativă a mecanismelor de completare. Pentru date injectate MCAR~\cite{rubin1976inference, little2002missing}, comportamentul strategiilor simple poate fi comparat cu imputarea predictivă inspirată de abordările \textit{MICE}/\textit{MissForest}~\cite{buuren2011mice, stekhoven2012missforest}. În practică, acest lucru ajută la identificarea strategiilor care conservă mai bine dinamica locală a seriei și evită artefactele puternice.
+
+\section{Antrenare live și monitorizare în timp real}
+
+Aplicația include un mecanism de antrenare live, în care evoluția modelului este urmărită pe parcursul epocilor. Pentru fiecare rulare sunt actualizate în interfață:
+
+\begin{itemize}
+	\item curba \textit{train loss};
+	\item curba \textit{validation loss};
+	\item starea curentă a execuției (epoca activă, model, strategie);
+	\item timpul de rulare.
+\end{itemize}
+
+Această monitorizare are rol practic important: permite observarea timpurie a divergenței, a supraînvățării sau a unei convergențe insuficiente. În plus, oferă transparență asupra diferențelor de comportament între arhitecturile recurente (RNN, LSTM, GRU), discutate în literatura de specialitate~\cite{hochreiter1997lstm, sherstinsky2020rnn, cho2014gru}.
+
+\section{Suport pentru scenarii extinse: federat și ansamblu}
+
+Deși rezultatele acestor scenarii sunt analizate în capitolele următoare, implementarea include deja infrastructura completă pentru:
+
+\begin{itemize}
+	\item învățare federată pe utilizatori, cu agregare iterativă a modelelor locale (stil \textit{FedAvg})~\cite{mcmahan2017fedavg, kairouz2021fl};
+	\item experimente de ansamblu (configurații independente și secvențiale), motivate de principiile metodelor \textit{ensemble}~\cite{dietterich2000ensemble, zhou2012ensemble}.
+\end{itemize}
+
+Integrarea acestor scenarii în aceeași aplicație are un avantaj metodologic clar: toate experimentele rulează pe aceleași mecanisme de preprocesare, aceleași metrici și aceeași logică de evaluare, ceea ce crește comparabilitatea și reduce riscul de inconsistențe între experimente.
+
+\section{Exportul și trasabilitatea rulărilor}
+
+Pentru fiecare execuție, aplicația exportă rezultatele într-un format tabelar (CSV), incluzând strategia de imputare, tipul modelului, metricile, pierderile finale și timpul de rulare. Acest format simplifică analiza comparativă ulterioară și permite includerea directă a rezultatelor în documentarea academică.
+
+Trasabilitatea este susținută prin păstrarea configurațiilor de rulare și a statusului fiecărui experiment (\textit{ok}/\textit{error}). Astfel, analiza rezultatelor poate fi refăcută și verificată în condiții similare, ceea ce este esențial pentru reproducibilitate.
+
+\section{Observații empirice din rulările curente}
+
+Pe baza seriilor de experimente rulate în această etapă, au fost identificate diferențe clare de sensibilitate între seturile de date și strategiile de imputare.
+
+Pentru setul \textit{Bitcoin Historical Data}, strategiile \textit{fill\_zero} și \textit{fill with column mean} s-au dovedit sensibile la creșterea procentului de valori lipsă. În special pentru niveluri medii și ridicate ale lipsurilor, aceste două abordări pot amplifica erorile și pot destabiliza performanța modelelor recurente. Din acest motiv, \textit{fill\_zero} a fost exclusă din fluxul principal de experimente, iar \textit{fill\_mean} a fost tratată cu prudență în scenariile cu procent ridicat de lipsuri.
+
+Totuși, pentru nivel redus al datelor lipsă (aproximativ 5\%), \textit{fill\_mean} poate produce rezultate acceptabile pe Bitcoin, rămânând utilă ca punct de comparație în experimentele ușoare. În practică, strategiile \textit{forward fill}, \textit{window mean} și imputarea predictivă au avut un comportament mai stabil pe intervale mai largi de lipsuri.
+
+În contrast, pe setul DSMTS nu au fost observate sensibilități similare la aceeași intensitate. Rulările au indicat că acest set de date rămâne robust inclusiv la niveluri ridicate ale valorilor lipsă (până la 50\%), fără degradări severe comparabile cu cele observate pe Bitcoin pentru strategiile problematice.
+
+Aceste constatări justifică utilizarea unui protocol diferențiat pe set de date: pentru Bitcoin sunt preferate strategii de imputare mai robuste la lipsuri, iar pentru DSMTS spațiul de explorare poate include o plajă mai largă de strategii și procente de lipsuri.
+
+\section{Concluzii privind implementarea}
+
+Implementarea realizată operationalizează cadrul metodologic propus într-un sistem software unitar, orientat atât spre cercetare, cât și spre utilizare practică. Componenta de interfață, modulul de vizualizare a valorilor lipsă și mecanismul de antrenare live oferă control și transparență asupra întregului ciclu experimental.
+
+În consecință, aplicația nu reprezintă doar un script de antrenare punctual, ci o platformă experimentală completă, capabilă să susțină evaluări comparative consistente pentru scenarii multiple. Pe această bază, capitolul următor va prezenta analiza experimentelor și interpretarea rezultatelor obținute.

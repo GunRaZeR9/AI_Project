@@ -162,7 +162,7 @@ def federated_training_study(
 
             raw_train_vals, raw_test_vals = user_data_dict[user_id]
             train_vals = _apply_norm_params(raw_train_vals, global_norm_params)
-            test_vals = _apply_norm_params(raw_test_vals, global_norm_params)
+            test_vals = raw_test_vals  # Do NOT pre-normalize; gru_one_step_predict handles normalization
             started = perf_counter()
 
             kwargs = {k: v for k, v in fixed_params.items()}
@@ -194,8 +194,9 @@ def federated_training_study(
             try:
                 result = train_gru(train_vals, **kwargs)
 
-                full_series = np.concatenate([train_vals, test_vals])
-                test_preds = gru_one_step_predict(result, full_series, start_idx=len(train_vals))
+                # Use raw data for prediction; gru_one_step_predict normalizes internally
+                full_series = np.concatenate([raw_train_vals, raw_test_vals])
+                test_preds = gru_one_step_predict(result, full_series, start_idx=len(raw_train_vals))
                 if not np.all(np.isfinite(np.asarray(test_preds, dtype=float))):
                     raise ValueError("Non-finite local predictions produced.")
                 metrics = compute_metrics(test_vals, test_preds)

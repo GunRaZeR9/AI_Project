@@ -1,0 +1,29 @@
+\chapter{Introducere}
+
+În analiza seriilor de timp, \textbf{lipsa valorilor} (\textit{missing values}) este o problemă metodologică semnificativă. Acest lucru afectează performanța de predicție, validitatea concluziilor statistice și calitatea procesului de modelare. În lumea reală, astfel de valori pot apărea din cauza erorilor de măsurare, problemelor cu fluxul de colectare a datelor, problemelor cu echipamentele sau pierderii de informații în timpul stocării sau transmiterii. Din acest punct de vedere, valorile lipsă nu sunt doar un obstacol pentru preprocesarea tehnică, ci și o componentă care poate schimba structura internă a seriilor de timp și poate avea un impact semnificativ asupra rezultatelor generate de metodele de analiză și prognoză~\cite{acock2005missing, rubin1976inference, little2002missing}.
+
+Gestionarea eficientă a datelor incomplete a devenit o etapă esențială în procesul de construire a modelelor predictive, datorită progresului tehnicilor de învățare automată. Literatura de specialitate subliniază faptul că alegerea metodei de tratare a valorilor lipsă trebuie să fie bazată pe mecanismul prin care acestea apar, precum și pe caracteristicile datelor analizate~\cite{rubin1976inference, little2002missing, schafer2002missing}.
+Aceasta subliniază importanța unei analize amănunțite a fenomenului, deoarece deciziile privind imputarea sau eliminarea observațiilor necorespunzătoare pot avea un impact semnificativ asupra interpretării rezultatelor și a preciziei concluziilor. Astfel, problema valorilor absente trebuie examinată dintr-o perspectivă mai largă decât doar completarea datelor absente; trebuie, de asemenea, examinată modul în care procedurile de completare a datelor absente afectează întregul proces analitic.
+
+\section{Introducere în tematica lucrării}
+
+Utilizând metode de învățare automată, acest studiu analizează, tratează și evaluează impactul valorilor lipsă asupra predicției seriilor de timp. Obiectivul este de a compara diferite abordări pentru gestionarea datelor incomplete și de a sublinia modul în care acestea afectează performanța modelelor de predicție. În acest context, studiul se concentrează pe îmbinarea tehnicilor moderne de prognoză cu analiza statistică a datelor incomplete. Obiectivul este de a găsi metode adecvate pentru îmbunătățirea fiabilității și robusteții predicțiilor în situații de lipsă de informații.
+\section{Contribuții personale}
+
+O contribuție personală la această lucrare este proiectarea și crearea unui cadru experimental pentru a examina efectul valorilor lipsă asupra predicției seriilor de timp folosind tehnici de învățare automată. O aplicație a fost dezvoltată pentru a permite injectarea controlată a valorilor lipsă, aplicarea și compararea diferitelor abordări de tratare a acestora, de la metode simple de completare până la imputare predictivă, și evaluarea modului în care aceste abordări afectează performanța modelelor de prognoză. În plus, pentru a interpreta rezultatele într-un cadru experimental unitar și reproductibil, au fost integrate mecanisme de analiză a hiperparametrilor și de studiu al impactului normalizării datelor.
+
+În plus, contribuțiile personale au vizat implementarea și compararea arhitecturilor recurente RNN, GRU și LSTM utilizate în predicția seriilor de timp pentru a sublinia diferențele de comportament în prezența datelor incomplete. Pentru a spori relevanța practică a studiului, analiza a fost efectuată pe două seturi de date diferite: date istorice Bitcoin și DSMTS. Acest lucru a permis validarea concluziilor în diferite contexte, care au diferite dinamici temporale și caracteristici statistice. Prin urmare, lucrarea propune o abordare aplicativă și comparativă asupra modului în care performanța modelelor predictive, metodele de imputare și valorile lipsă sunt legate unul de celălalt.
+
+\section{Structura lucrării}
+
+Lucrarea este împărțită în opt capitole și urmărește o succesiune logică, de la contextul teoretic și stadiul cercetării până la implementare, experimente și interpretarea rezultatelor:
+\begin{itemize}
+    \item În primul capitol, \textbf{Introducere}, sunt prezentate motivația alegerii temei, obiectivele și contribuțiile personale, precum și modul de organizare a lucrării.
+    \item Capitolul al doilea, \textbf{Stadiul actual al cercetării}, discută problematica valorilor lipsă în serii de timp și trece în revistă atât metode consacrate, cât și abordări moderne/predictive de imputare, precum și implicațiile acestora în contextul predicției.
+    \item Capitolul al treilea, \textbf{Aspecte teoretice și tehnologice}, introduce conceptele necesare pentru modelele recurente utilizate (RNN, LSTM, GRU) și prezintă cadrul tehnologic folosit în implementare.
+    \item Capitolul al patrulea, \textbf{Metodologia}, descrie pașii de lucru: seturile de date, preprocesarea, simularea valorilor lipsă, arhitecturile utilizate, protocolul experimental și metricile de evaluare.
+    \item Capitolul al cincilea, \textbf{Contribuțiile proprii}, prezintă dezvoltarea cadrului experimental și a aplicației interactive, implementarea și compararea arhitecturilor recurente, precum și extinderea analizei prin studii de configurare și validare pe seturi de date distincte.
+    \item Capitolul al șaselea, \textbf{Experimente}, detaliază scenariile experimentale rulate și modul în care sunt comparate strategiile de tratare a valorilor lipsă împreună cu modelele de predicție.
+    \item Capitolul al șaptelea, \textbf{Rezultate}, sintetizează observațiile obținute pe seturile de date DSMTS și date istorice Bitcoin și evidențiază efectul strategiilor de imputare asupra performanței.
+    \item În final, capitolul al optulea, \textbf{Concluzii și direcții viitoare}, rezumă rezultatele principale, limitele studiului și posibile direcții de dezvoltare.
+\end{itemize}

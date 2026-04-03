@@ -51,13 +51,12 @@ def render_preview(df, default_col=None, fitted_imputer=None):
 
     strategy_colors = {
         "ffill": "red",
-        "fill_zero": "blue",
         "fill_mean": "green",
         "window_mean": "orange",
         "predictive_imputer": "gold",
     }
 
-    fast_strategies = ["ffill", "fill_zero", "fill_mean", "window_mean"]
+    fast_strategies = ["ffill", "fill_mean", "window_mean"]
     if fitted_imputer is not None:
         active_strategies = fast_strategies + ["predictive_imputer"]
     else:

@@ -170,7 +170,11 @@ def render_experiment_overview_tab(df_with_missing, cfg):
 
             for strat in selected_strategies:
                 try:
-                    fitted_imp = st.session_state.get("rf_imputer") if strat == "predictive_imputer" else None
+                    fitted_imp = (
+                        st.session_state.get(f"rf_imputer_{cfg.get('dataset_choice', 'dsmts')}")
+                        if strat == "predictive_imputer"
+                        else None
+                    )
                     if strat == "predictive_imputer" and fitted_imp is None:
                         st.info(
                             "Predictive strategy selected without cached imputer. "

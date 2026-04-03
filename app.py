@@ -1,6 +1,6 @@
 import streamlit as st
 
-from data_processing import RF_IMPUTER_CACHE, inject_missing_values, load_dsmts_data
+from data_processing import DATASETS, inject_missing_values
 from interface import (
     render_custom_plotting_tab,
     render_ensemble_experiment_tab,
@@ -11,16 +11,9 @@ from interface import (
     render_sidebar,
 )
 
-st.title("DSMTS Univariate Time Series Forecasting")
-st.caption(
-    "Dataset: Dynamical System Multivariate Time Series (DSMTS) — "
-    "17-variable simulated complex dynamical system at 1 Hz."
-)
-
-
-@st.cache_data(show_spinner="Downloading DSMTS dataset…")
-def get_data():
-    return load_dsmts_data()
+@st.cache_data(show_spinner=False)
+def get_data(dataset_choice: str):
+    return DATASETS[dataset_choice]["loader"]()
 
 
 @st.cache_data(show_spinner=False)
@@ -40,11 +33,13 @@ def _prep_cache_key(cfg, missing_rates, impute_strategy: str, imputer_for_traini
         idx_end = ""
 
     imputer_token = None
-    if imputer_for_training is not None and RF_IMPUTER_CACHE.exists():
-        imputer_token = RF_IMPUTER_CACHE.stat().st_mtime_ns
+    imputer_cache_path = cfg.get("rf_imputer_cache_path")
+    if imputer_for_training is not None and imputer_cache_path is not None and imputer_cache_path.exists():
+        imputer_token = imputer_cache_path.stat().st_mtime_ns
 
     rates_key = tuple(sorted((str(k), float(v)) for k, v in missing_rates.items()))
     return (
+        cfg.get("dataset_choice", ""),
         int(cfg.get("max_rows", len(cfg["df_clean"]))),
         int(len(cfg["df_clean"])),
         idx_start,
@@ -79,16 +74,36 @@ def _get_prepared_frames(cfg, missing_rates, impute_strategy, imputer_for_traini
     return df_with_missing, df_for_training
 
 
-full_df = get_data()
+with st.sidebar:
+    st.header("Dataset source")
+    dataset_choice = st.selectbox(
+        "Select dataset",
+        options=list(DATASETS.keys()),
+        format_func=lambda k: DATASETS[k]["label"],
+        key="dataset_choice",
+    )
+
+dataset_meta = DATASETS[dataset_choice]
+st.title(dataset_meta["title"])
+st.caption(dataset_meta["caption"])
+
+with st.spinner(f"Loading {dataset_meta['label']} dataset..."):
+    full_df = get_data(dataset_choice)
 all_cols = full_df.columns.tolist()
 total_rows = len(full_df)
 
-cfg = render_sidebar(full_df=full_df, all_cols=all_cols, total_rows=total_rows)
+cfg = render_sidebar(
+    full_df=full_df,
+    all_cols=all_cols,
+    total_rows=total_rows,
+    dataset_choice=dataset_choice,
+    dataset_default_target=dataset_meta.get("default_target"),
+)
 
 df_clean = cfg["df_clean"]
 missing_rates = cfg["missing_rates"]
 impute_strategy = cfg["impute_strategy"]
-rf_imputer = st.session_state.get("rf_imputer")
+rf_imputer = st.session_state.get(f"rf_imputer_{dataset_choice}")
 imputer_for_training = rf_imputer if impute_strategy == "predictive_imputer" else None
 
 df_with_missing, df_for_training = _get_prepared_frames(
