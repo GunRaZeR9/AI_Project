@@ -1,0 +1,94 @@
+%% ----------------------------------------------------------------
+%% Thesis.tex -- MAIN FILE (the one that you compile with LaTeX)
+%% ---------------------------------------------------------------- 
+
+% Set up the document
+\documentclass[a4paper, 11pt, oneside]{Thesis}  % Use the "Thesis" style, based on the ECS Thesis style by Steve Gunn
+\graphicspath{{img/}}  % Location of the graphics files (set up for graphics to be in PDF format)
+
+% Include any extra LaTeX packages required
+\usepackage[square, numbers, comma, sort&compress]{natbib}  % Use the "Natbib" style for the references in the Bibliography
+\usepackage{verbatim}  % Needed for the "comment" environment to make LaTeX comments
+\usepackage{vector}  % Allows "\bvec{}" and "\buvec{}" for "blackboard" style bold vectors in maths
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{needspace}
+\usepackage[T1]{fontenc}
+\hypersetup{urlcolor=blue, colorlinks=true}  % Colours hyperlinks in blue, but this can be distracting if there are many links.
+
+%% ----------------------------------------------------------------
+\begin{document}
+\frontmatter      % Begin Roman style (i, ii, iii, iv...) page numbering
+
+% Set up the Title Page
+\title  {Analiza, tratarea și efectul valorilor lipsă în predicția seriilor de timp cu tehnici de învățare automată.}
+\authors  {Paul-Alin Tatar}
+\addresses  {\groupname\\\deptname\\\univname}  % Do not change this here, instead these must be set in the "Thesis.cls" file, please look through it instead
+\date       {\today}
+\subject    {}
+\keywords   {}
+
+\maketitle
+%% ----------------------------------------------------------------
+
+%\input{paggarda} % Introducere
+
+\setstretch{1.3}  % It is better to have smaller font and larger line spacing than the other way round
+\pagestyle{fancy}  % Finally, use the "fancy" page style to implement the FancyHdr headers
+
+
+\tableofcontents  % Write out the Table of Contents
+
+\input{Abstract}
+
+%% ----------------------------------------------------------------
+\mainmatter	  % Begin normal, numeric (1,2,3...) page numbering
+\pagestyle{fancy}  % Return the page headers back to the "fancy" style
+
+% Include the chapters of the thesis, as separate files
+% Just uncomment the lines as you write the chapters
+
+\input{Capitole/Introducere} % Introducere
+
+\input{Capitole/StadiulActualAlCercetarii}
+
+\input{Capitole/AspecteTeoretice} % Aspecte teoretice si tehnologice
+
+\input{Capitole/Metodologie} % Aspecte de proiectare
+
+\input{Capitole/ContribuțiileProprii}
+
+\input{Capitole/Implementare și experimentare} % Implementarea soluției
+
+\input{Capitole/Rezultate și discuții} % Rezultate experimentale
+
+\input{Capitole/ConcluziiSiDirectiiViitoatre} % Concluzii
+
+%% ----------------------------------------------------------------
+% Now begin the Appendices, including them as separate files
+
+\addtocontents{toc}{\vspace{2em}} % Add a gap in the Contents, for aesthetics
+
+\appendix % Cue to tell LaTeX that the following 'chapters' are Appendices
+
+\input{Anexe/AnexaA}	% Appendix Title
+
+%\input{Appendices/AppendixB} % Appendix Title
+
+%\input{Appendices/AppendixC} % Appendix Title
+
+\addtocontents{toc}{\vspace{2em}}  % Add a gap in the Contents, for aesthetics
+\backmatter
+
+%% ----------------------------------------------------------------
+\label{Bibliografie}
+\lhead{\emph{Bibliografie}}  % Change the left side page header to "Bibliography"
+\bibliographystyle{unsrtnat}  % Use the "unsrtnat" BibTeX style for formatting the Bibliography
+\bibliography{Bibliografia}  % The references (bibliography) information are stored in the file named "Bibliography.bib"
+
+\end{document}  % The End
+%% ----------------------------------------------------------------

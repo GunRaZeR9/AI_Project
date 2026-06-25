@@ -1,28 +1,27 @@
 \chapter{Aspecte teoretice și tehnologice}
 
-În acest capitol sunt sintetizate conceptele teoretice care sunt necesare pentru a înțelege două lucruri:
+Capitolul acoperă conceptele teoretice necesare pentru a înțelege două aspecte:
 \begin{enumerate}
-    \item motivele pentru care valori scăzute apar în seriile de timp
-    \item  modul în care aceste scăderi pot afecta modelele de predicție
+    \item motivele pentru care valori lipsă apar în seriile de timp
+    \item  modul în care aceste lipsuri pot afecta modelele de predicție
 \end{enumerate}
- În datele reale, lipsurile sunt frecvente. Ele pot fi cauzate de erori de măsurare, întreruperi în procesul de colectare, probleme cu senzorii sau pierderi parțiale de date.
+În datele reale, lipsurile sunt frecvente. Ele pot fi cauzate de erori de măsurare, întreruperi în procesul de colectare, probleme cu senzorii sau pierderi parțiale de date.
 
-Din punctul de vedere al acestei lucrări, partea „delicată” implică completarea golurilor fără a afecta dinamica seriei. Introducerea greșită poate crea tendințe artificiale, poate netezi variațiile excesiv sau poate amplifica zgomot. De aceea, literatura recomandă selectarea metodei în funcție de mecanismul de apariție a valorilor lipsă și de specificul datelor analizate, deoarece acestea pot avea efecte semnificative asupra interpretării și acurateței~\cite{acock2005missing, rubin1976inference, little2002missing}.
+Din punctul de vedere al acestei lucrări, partea dificilă este completarea golurilor fără a afecta dinamica seriei. O imputare greșită poate crea tendințe artificiale, poate netezi variațiile excesiv sau poate amplifica zgomot. De aceea, metoda de imputare trebuie aleasă în funcție de mecanismul de apariție a valorilor lipsă și de specificul datelor analizate, întrucât alegerea are efecte directe asupra acurateței modelului~\cite{acock2005missing, rubin1976inference, little2002missing}.
 
-O a doua direcție teoretică importantă pentru lucrare este învățarea federată. Aceasta urmărește antrenarea modelelor pe date care rămân distribuite pe mai multe noduri sau utilizatori, fără a concentra seturile de date într-un singur loc. În forma clasică, procesul alternează între antrenarea locală și agregarea parametrilor la nivel central, ceea ce permite valorificarea datelor distribuite fără a muta direct conținutul acestora~\cite{mcmahan2017fedavg, kairouz2021fl}. Din perspectiva acestei lucrări, interesul principal este că un astfel de cadru reflectă scenarii în care modelele sunt actualizate pe partiții separate ale seriei temporale, iar rezultatul global este obținut prin agregare iterativă.
+O a doua direcție teoretică importantă pentru lucrare este învățarea federată. Aceasta urmărește antrenarea modelelor pe date care rămân distribuite pe mai multe noduri sau utilizatori, fără a concentra seturile de date într-un singur loc. În forma clasică, procesul alternează între antrenarea locală și agregarea parametrilor la nivel central, datele rămânând pe dispozitivele locale~\cite{mcmahan2017fedavg, kairouz2021fl}. Din perspectiva acestei lucrări, interesul principal este că un astfel de cadru corespunde scenariilor în care modelele sunt actualizate pe partiții separate ale seriei temporale, iar rezultatul global este obținut prin agregare iterativă.
 
-În mod complementar, metodele de ansamblu oferă un cadru pentru combinarea mai multor modele sau predicții astfel încât eroarea finală să fie redusă sau stabilitatea să crească. Literatura arată că beneficiul ansamblurilor este mai ales vizibil atunci când membrii ansamblului au erori diferite și sunt suficient de diversificați~\cite{dietterich2000ensemble, zhou2012ensemble}. În experimentele din această lucrare, această idee este relevantă atât pentru combinarea mai multor modele de predicție, cât și pentru analiza comparativă a strategiilor de agregare sau de secvențiere a rezultatelor.
+Metodele de ansamblu oferă un cadru pentru combinarea mai multor modele sau predicții, cu scopul de a reduce eroarea finală sau de a crește stabilitatea. Beneficiul ansamblurilor este mai ales vizibil când membrii au erori diferite și sunt suficient de diversificați~\cite{dietterich2000ensemble, zhou2012ensemble}. În experimentele din această lucrare, această idee apare atât la combinarea mai multor modele de predicție, cât și la analiza comparativă a strategiilor de agregare sau de secvențiere a rezultatelor.
 
-Arhitecturile neuronale recurente RNN, GRU și LSTM sunt recapitulate în a doua parte a capitolului. Aceste arhitecturi sunt folosite frecvent pentru prognoza seriilor de timp. Aici sunt incluse din motive pragmatice. Este vorba de modele care sunt concepute pentru date secvențiale și au capacitatea de a folosi contextul temporal (informația din pașii anteriori) în momentul predicției.
+A doua parte a capitolului recapitulează arhitecturile neuronale recurente RNN, GRU și LSTM, folosite frecvent pentru prognoza seriilor de timp. Sunt incluse din motive pragmatice: sunt modele concepute pentru date secvențiale, care folosesc contextul temporal (informația din pașii anteriori) în momentul predicției.
 
-Dintre acestea, LSTM rămâne o referință importantă deoarece a fost propus tocmai pentru a reduce dificultățile RNN-urilor clasice în învățarea dependențelor pe termen lung, prin mecanisme interne de memorare și control al fluxului informațional~\cite{hochreiter1997lstm}. 
-Capitolele următoare examinează modul în care strategiile de imputare și lipsurile influențează performanța predicției, iar această bază teoretică susține analiza comparativă din lucrare.
+Dintre acestea, LSTM rămâne o referință importantă deoarece a fost propus tocmai pentru a reduce dificultățile RNN-urilor clasice în învățarea dependențelor pe termen lung, prin mecanisme interne de memorare și control al fluxului informațional~\cite{hochreiter1997lstm}. Această bază teoretică susține analiza comparativă din capitolele experimentale, unde sunt examinate efectele strategiilor de imputare și ale lipsurilor asupra performanței predicției.
 
 \section{Rețele neuronale recurente}
 
-Rețelele neuronale recurente (RNN) sunt concepute pentru a lucra cu date secvențiale, unde ordinea observațiilor contează. Un RNN include conexiuni recurente în comparație cu rețelele feedforward, ceea ce înseamnă că datele anterioare sunt „reutilizate” în pașii următori. Practic, modelul păstrează o stare internă, sau o memorie scurtă, care descrie ceea ce s-a întâmplat până atunci. Acest lucru explică utilizarea RNN în diverse sarcini, cum ar fi modelarea limbajului, recunoașterea vorbirii, analiza semnalelor și predicția seriilor de timp. Sherstinsky caracterizează această noțiune ca o actualizare continuă a unei stări ascunse care combină intrarea actuală cu contextul acumulat anterior~\cite{sherstinsky2020rnn}.
+Rețelele neuronale recurente (RNN) sunt concepute pentru date secvențiale, unde ordinea observațiilor contează. Spre deosebire de rețelele feedforward, un RNN include conexiuni recurente: datele anterioare sunt „reutilizate” în pașii următori. Practic, modelul păstrează o stare internă (o memorie scurtă) care descrie ceea ce s-a întâmplat până atunci. De aceea, RNN-urile sunt folosite în sarcini precum modelarea limbajului, recunoașterea vorbirii sau predicția seriilor de timp. Sherstinsky descrie această idee ca o actualizare continuă a unei stări ascunse care combină intrarea actuală cu contextul acumulat anterior~\cite{sherstinsky2020rnn}.
 
-Acest articol discută predicția pe serii de timp cu valori lipsă folosind RNN ca punct de plecare util. Modelul se bazează pe continuitatea temporală, ceea ce înseamnă că, măcar parțial, pasul actual depinde de pașii anteriori. Totuși, chiar aici apar limitele. În special din cauza disipării sau exploziei gradientului în timpul antrenării, RNN-urile clasice au dificultăți în învățarea dependențelor îndepărtate în timp. De aceea, înainte de a trece la opțiunile cu mecanisme de control îmbunătățite, cum ar fi GRU și LSTM, este important să înțelegem RNN-ul standard~\cite{sherstinsky2020rnn}.
+RNN-ul este un punct de plecare util pentru predicția pe serii de timp cu valori lipsă. Modelul se bazează pe continuitatea temporală: pasul actual depinde, cel puțin parțial, de pașii anteriori. Totuși, tocmai aici apar limitele. Din cauza disipării sau exploziei gradientului în timpul antrenării, RNN-urile clasice au dificultăți în învățarea dependențelor îndepărtate în timp. Acesta este motivul pentru care GRU și LSTM au introdus mecanisme de control îmbunătățite~\cite{sherstinsky2020rnn}.
 
 Observație (legat de tema lucrării): lipsurile și „blocurile” consecutive pot construi starea ascunsă pe informații incomplete. Acest lucru este important în capitolele experimentale deoarece o imputare prea agresivă poate ascunde variația reală, iar o imputare prea simplă poate introduce discontinuități care se răspândesc în predicții.
 
@@ -64,13 +63,13 @@ La antrenare, se minimizează o funcție de pierdere acumulată pe secvență:
 
 Ecuația~\ref{eq:rnn_loss} definește obiectivul de optimizare: erorile sunt însumate pe întreaga secvență, iar modelul este ajustat pentru a apropia predicțiile de valorile reale~\cite{sherstinsky2020rnn}.
 
-$\ell(\hat{y}_t, y_t)$ măsoară eroarea dintre predicție și valoarea reală la momentul $t$. Optimizarea se face în mod obișnuit prin Backpropagation Through Time (BPTT), adică varianta „desfășurată în timp” a backpropagation-ului. Așa cum subliniază Sherstinsky, această desfășurare face clar traseul prin care se propagă atât informația, cât și gradientul, de-a lungul pașilor temporali~\cite{sherstinsky2020rnn}.
+$\ell(\hat{y}_t, y_t)$ măsoară eroarea dintre predicție și valoarea reală la momentul $t$. Optimizarea se face în mod obișnuit prin Backpropagation Through Time (BPTT), adică varianta „desfășurată în timp” a backpropagation-ului. Această desfășurare face vizibil traseul prin care se propagă atât informația, cât și gradientul, de-a lungul pașilor temporali~\cite{sherstinsky2020rnn}.
 
 \subsection{Arhitectura RNN}
 
 Există două perspective posibile asupra structurii RNN. Rețeaua într-o formă compactă este un bloc recurent care primește la intrare starea curentă și starea anterioară, apoi returnează o nouă stare și o ieșire. Pentru fiecare moment al secvenței, aceeași celulă este repetată în forma desfășurată în timp. Dependența dintre pași este clară cu a doua reprezentare, ceea ce o face foarte utilă atunci când analizăm BPTT~\cite{sherstinsky2020rnn}.
 
-În figurile următoare sunt prezentate atât reprezentarea generală a unei celule RNN, cât și forma desfășurată în timp a arhitecturii recurente. Aceste reprezentări subliniază faptul că modelul procesează secvențial datele de intrare și actualizează iterativ starea internă. Acest lucru îi permite să identifice dependențele temporale specifice seriilor de timp:
+În figurile următoare sunt prezentate atât reprezentarea generală a unei celule RNN, cât și forma desfășurată în timp a arhitecturii recurente. Prin procesarea secvențială și actualizarea iterativă a stării interne, modelul poate identifica dependențe temporale specifice seriilor de timp:
 
 \begin{figure}[h!]
     \centering
@@ -91,15 +90,15 @@ Există două perspective posibile asupra structurii RNN. Rețeaua într-o form�
     \label{fig:rnn_architecture}
 \end{figure}
 
-Rețeaua primește o nouă observație și o „înglobează” în starea internă la fiecare pas temporal al procesului. Un avantaj este capacitatea modelului de a folosi contextul acumulat. Dezavantajul este că devine dificil să păstrezi informațiile relevante pe perioade lungi de timp. Dezvoltarea arhitecturilor care folosesc mecanisme de control mai bune, cum ar fi LSTM și GRU, a fost stimulată de această limitare.
+La fiecare pas temporal, rețeaua primește o nouă observație și o înglobează în starea internă. Avantajul este că modelul poate folosi contextul acumulat. Problema este că informațiile relevante se pierd pe perioade mai lungi, ceea ce a dus la apariția arhitecturilor cu mecanisme de control mai bune, cum ar fi LSTM și GRU.
 
 \section{Învățarea federată}
 
-Învățarea federată este o paradigmă de antrenare distribuită în care datele rămân pe dispozitivele sau subansamblurile locale, iar serverul central agregă actualizările transmise de acestea~\cite{mcmahan2017fedavg, kairouz2021fl}. Modelul global este rafinat iterativ prin combinarea parametrilor sau a gradientelor obținute local, ceea ce reduce nevoia de consolidare a tuturor datelor într-un singur depozit.
+Învățarea federată este o paradigmă de antrenare distribuită în care datele rămân pe dispozitivele sau subansamblurile locale, iar serverul central agregă actualizările transmise de acestea~\cite{mcmahan2017fedavg, kairouz2021fl}. Modelul global este rafinat iterativ prin combinarea parametrilor sau a gradientelor obținute local, fără a fi nevoie să se centralizeze datele brute.
 
 Această abordare este relevantă în special atunci când există constrângeri de confidențialitate, de trafic de date sau de separare a surselor de date. În contextul seriilor de timp, ideea este utilă atunci când secvențele sunt împărțite pe utilizatori, zone, senzori sau perioade diferite, dar se dorește totuși obținerea unui model global. În lucrarea de față, această logică este reflectată de experimentele care antrenează modele locale pe utilizatori diferiți și apoi le agregă într-un model global comun.
 
-Un avantaj important este că învățarea federată păstrează structura locală a datelor, dar oferă totuși o imagine globală asupra fenomenului. În același timp, literatura arată că există provocări legate de neomogenitatea datelor, costul comunicațional și stabilitatea convergenței~\cite{kairouz2021fl}. Tocmai de aceea, ea reprezintă o componentă teoretică relevantă pentru analiza comparativă a modelelor recurente pe date împărțite.
+Un avantaj important este că învățarea federată păstrează structura locală a datelor, oferind totuși o perspectivă globală asupra fenomenului. Există însă și provocări: neomogenitatea datelor, costul comunicațional și stabilitatea convergenței sunt probleme documentate în literatură~\cite{kairouz2021fl}. Din acest motiv, abordarea este o componentă teoretică utilă pentru analiza comparativă a modelelor recurente pe date împărțite.
 
 Figura următoare ilustrează un cadru de învățare federată cu actualizare de tip diferențial privat, util ca imagine de ansamblu pentru modul în care datele rămân locale, iar actualizările sunt agregate la nivel central~\cite{mcmahan2017fedavg, kairouz2021fl}.
 
@@ -112,11 +111,11 @@ Figura următoare ilustrează un cadru de învățare federată cu actualizare d
 
 \section{Metode de ansamblu în predicție}
 
-Metodele de ansamblu combină predicțiile mai multor modele pentru a obține o ieșire mai robustă decât cea a unui singur estimator~\cite{dietterich2000ensemble, zhou2012ensemble}. Ideea centrală este că modele diferite pot surprinde aspecte diferite ale aceleiași serii, iar media, votul sau alte scheme de agregare pot reduce variația și pot stabiliza rezultatul final.
+Metodele de ansamblu combină predicțiile mai multor modele pentru a obține o ieșire mai robustă decât cea a unui singur estimator~\cite{dietterich2000ensemble, zhou2012ensemble}. Modele diferite pot surprinde aspecte diferite ale aceleiași serii, iar media, votul sau alte scheme de agregare pot reduce variația și pot stabiliza rezultatul final.
 
 În predicția seriilor de timp, acest tip de metodă este util mai ales atunci când distribuția datelor se modifică sau când există mai multe modele candidate antrenate pe aceleași secvențe. Un ansamblu poate combina modele independente, antrenate în paralel, sau modele secvențiale, în care un model corectează reziduurile altuia. Din perspectiva acestei lucrări, această distincție este importantă deoarece codul experimental include atât o variantă de ansamblu independent, cât și o variantă secvențială bazată pe reziduuri.
 
-La nivel conceptual, ansaQmblurile sunt relevante și pentru că fac posibilă o comparație mai fidelă între modele: nu se mai urmărește doar performanța individuală, ci și modul în care predicțiile se pot consolida sau corecta reciproc. În acest fel, ansamblul devine o extensie naturală a procesului de forecast atunci când o singură arhitectură nu este suficient de stabilă sau de expresivă.
+Ansamblurile permit și o comparație mai fidelă între modele: nu se mai urmărește doar performanța individuală, ci și modul în care predicțiile se pot consolida sau corecta reciproc. Această perspectivă este utilă când o singură arhitectură nu este suficient de stabilă sau de expresivă.
 
 Figura următoare ilustrează principalele metode de ansamblu folosite în predicție, incluzând bagging, boosting și stacking~\cite{dietterich2000ensemble, zhou2012ensemble}.
 
@@ -129,15 +128,15 @@ Figura următoare ilustrează principalele metode de ansamblu folosite în predi
 
 \section{Rețele Long Short-Term Memory}
 
-Pentru dependențe temporale pe intervale mai lungi, rețelele de memorare lungă scurtă (LSTM) sunt o extindere a RNN-urilor. Informația este transmisă prin starea ascunsă în RNN-ul clasic, dar antrenarea poate fi instabilă din cauza disipării/exploziei gradientului. Ca urmare, este mai greu de recunoscut relațiile „îndepărtate” în timp. Sinteza făcută de Yu, Si, Hu și Zhang prezintă LSTM ca o soluție pentru memorarea și propagarea informației relevante în date secvențiale~\cite{yu2019lstmreview}.
+Rețelele Long Short-Term Memory (LSTM) sunt o extindere a RNN-urilor, concepute pentru dependențe temporale pe intervale mai lungi. În RNN-ul clasic, informația este transmisă exclusiv prin starea ascunsă, iar antrenarea poate fi instabilă din cauza disipării sau exploziei gradientului. Prin urmare, relațiile „îndepărtate” în timp sunt greu de recunoscut. Yu, Si, Hu și Zhang descriu LSTM ca o soluție pentru memorarea și propagarea informației relevante în date secvențiale~\cite{yu2019lstmreview}.
 
-Controlul direct al fluxului informațional prin intermediul „porturilor” (gates) este o componentă esențială a LSTM. Aceste mecanisme permit rețelei să stabilească ce păstrează, ce uită și ce expune către ieșire. Acest tip de control explică utilizarea LSTM în aplicații cu dependențele nu strict locale, cum ar fi procesarea limbajului, analiza semnalelor sau predicția pe serii de timp~\cite{yu2019lstmreview}. LSTM oferă un comportament mai robust atunci când intrările sunt imperfecte – de exemplu, atunci când există valori lipsă sau imputări cu eroare – ceea ce îl face relevant pentru subiectul lucrării.
+Elementul esențial al LSTM este controlul direct al fluxului informațional prin intermediul porturilor (gates). Aceste mecanisme permit rețelei să stabilească ce păstrează, ce uită și ce expune către ieșire. De aceea, LSTM este folosit în aplicații cu dependențe nu strict locale: procesarea limbajului, analiza semnalelor sau predicția pe serii de timp~\cite{yu2019lstmreview}. Comportamentul mai robust atunci când intrările sunt imperfecte, de exemplu când există valori lipsă sau imputări cu eroare, îl face relevant pentru subiectul acestei lucrări.
 
 Observație: În practică, avantajul LSTM se evidențiază în principal în contexte pe termen lung, cum ar fi ciclurile, efectele întârziate sau sezonalitatea. Tocmai din acest motiv, rezultatul poate fi substanțial influențat de alegerea ferestrei de intrare și de modul în care sunt gestionate lipsurile.
 
 \subsection{Algoritmul LSTM}
 
-Sunt utilizate două stări într-o celulă LSTM: starea ascunsă $h_t$ și starea de memorie $c_t$. Trei porți principale, uitare, intrare și ieșire, sunt responsabile pentru gestionarea actualizarii lor. Conform lui Yu și colaboratorilor, aceste porți controlează ce informație este păstrată și eliminată, astfel încât modelul să rămână informativ și stabil pe o perioadă lungă de timp.~\cite{yu2019lstmreview}. 
+O celulă LSTM folosește două stări: starea ascunsă $h_t$ și starea de memorie $c_t$. Trei porți principale (uitare, intrare și ieșire) gestionează actualizarea lor. Yu și colaboratorii explică că aceste porți controlează ce informație este păstrată și ce este eliminată, astfel încât modelul să rămână stabil și informativ pe secvențe lungi~\cite{yu2019lstmreview}. 
 
 Ecuațiile standard sunt~\cite{yu2019lstmreview, hochreiter1997lstm}:
 
@@ -183,7 +182,7 @@ h_t = o_t \odot \tanh(c_t)
 
 Ecuația~\ref{eq:lstm_hidden} calculează starea ascunsă $h_t$ pe baza memoriei actualizate $c_t$, filtrată de poarta de ieșire~\cite{yu2019lstmreview, hochreiter1997lstm}.
 
-$x_t$ este intrarea, $h_{t-1}$ este starea ascunsă anterioară și $c_{t-1}$ este memoria anterioară în aceste relații. Vectorii $f_t$, $i_t$ și $o_t$ sunt compatibili cu porțiile de uitare, intrare și ieșire. "Sigma" este o sigmoidă, iar "odot" este un rezultat al unui element cu un alt element.
+În aceste relații, $x_t$ este intrarea, $h_{t-1}$ este starea ascunsă anterioară și $c_{t-1}$ este memoria anterioară. Vectorii $f_t$, $i_t$ și $o_t$ corespund porturilor de uitare, intrare și ieșire. $\sigma$ este funcția sigmoidă, iar $\odot$ este produsul element cu element.
 
 În aplicațiile de predicție a seriilor de timp, ieșirea se poate scrie (simplificat) astfel:
 
@@ -198,10 +197,10 @@ Aici, $\hat{x}_{t+1}$ este valoarea prezisă. În practică, antrenarea minimize
 
 \subsection{Arhitectura LSTM}
 
-Arhitectural, un LSTM este o succesiune de celule recurente conectate în timp care au mecanisme de memorare și control interne. Există o cale distinctă pentru memoria $c_t$ în loc de doar starea ascunsă $h_t$, ceea ce diferă de RNN-ul obișnuit. Această distincție ajută la păstrarea datelor utile pe termen lung. Structura LSTM permite, de asemenea, variante arhitecturale adaptate aplicației (cum ar fi moduri diferite de conectare sau utilizare a ieșirilor), așa cum subliniază Yu și colaboratorii.~\cite{yu2019lstmreview}.
+Din punct de vedere arhitectural, un LSTM este o succesiune de celule recurente conectate în timp, cu mecanisme interne de memorare și control. Față de RNN-ul obișnuit, există o cale distinctă pentru memoria $c_t$, separată de starea ascunsă $h_t$. Această separare permite păstrarea informației relevante pe termen lung. Structura permite și variante arhitecturale adaptate aplicației, cu moduri diferite de conectare sau de utilizare a ieșirilor, așa cum notează Yu și colaboratorii~\cite{yu2019lstmreview}.
 
 \Needspace{10cm}
-Reprezentarea schematică a unei singure celule LSTM și reprezentarea desfășurată în timp a întregii rețele pot fi utilizate pentru a ilustra modul în care funcționează rețelele. Aceste reprezentări subliniază importanța porților interne, a stării de memorie și a modului în care informația este răspândită succesiv între pașii temporali.
+Figurile de mai jos prezintă reprezentarea schematică a unei singure celule LSTM și forma desfășurată în timp a întregii rețele. Se pot observa porțile interne, calea stării de memorie și modul în care informația se propagă succesiv între pașii temporali.
 
 \begin{center}
     \begin{minipage}[b]{0.75\textwidth}
@@ -224,19 +223,19 @@ Reprezentarea schematică a unei singure celule LSTM și reprezentarea desfășu
     \label{fig:lstm_architecture}
 \end{center}
 
-Potențialul LSTM de a modela dependențe temporale de lungă durată și de a face predicții stabile în situații în care datele sunt imperfecte îl face esențial pentru lucrare. Cu toate acestea, stabilitatea nu garantează corectitudinea: dacă imputarea introduce un tipar artificial, modelul poate învăța cu succes acest tipar. Astfel, LSTM continuă să fie relevant atât teoretic, cât și aplicativ în analiza comparativă a metodelor.
+LSTM este relevant pentru această lucrare tocmai datorită capacității de a modela dependențe temporale pe termen lung și de a face predicții stabile când datele sunt imperfecte. Stabilitatea nu garantează însă corectitudinea: dacă imputarea introduce un tipar artificial, modelul îl va învăța la fel de eficient. Aceasta este una dintre tensiunile centrale analizate comparativ în capitolele experimentale.
 
 \section{Rețele Gated Recurrent Unit}
 
-Rețelele Gated Recurrent Unit (GRU) sunt o alternativă contemporană la RNN-ul clasic, care păstrează avantajele modelării secvențiale, dar au o structură mai mică decât LSTM. Gestionarea mai eficientă a dependențelor pe termen lung este ideea principală. Diferența este că GRU integrează totul în starea ascunsă, mai degrabă decât să folosească o stare de memorie distinctă (ca $c_t$ în LSTM). GRU este adesea considerat un compromis între simplitate și robustețe, deoarece este mai ușor de antrenat decât un LSTM complet, dar mai expresiv decât un RNN convențional~\cite{korstanje2025gru, cho2014gru}.
+Rețelele Gated Recurrent Unit (GRU) sunt o alternativă mai compactă la LSTM, care păstrează avantajele modelării secvențiale. Ideea principală este gestionarea mai eficientă a dependențelor pe termen lung, fără a folosi o stare de memorie distinctă (ca $c_t$ în LSTM): GRU integrează totul în starea ascunsă. Rezultatul este un model mai ușor de antrenat decât LSTM, dar mai expresiv decât un RNN convențional~\cite{korstanje2025gru, cho2014gru}.
 
-GRU este util în previzionare deoarece poate urmări relațiile dintre observații și poate păstra date relevante din trecut, folosind un mecanism de porți mai simplu. Korstanje notează că atunci când se încearcă să se găsească un echilibru între performanță, costuri computaționale și rapiditate de antrenare, GRU este adesea ales~\cite{korstanje2025gru}. În practică, acest echilibru contează atunci când rulezi mai multe experimente (de exemplu, când compari metode de imputare sau nivele diferite de lipsuri).
+GRU este util în previzionare deoarece poate urmări relațiile dintre observații și poate păstra informații relevante din trecut printr-un mecanism de porți mai simplu. Korstanje notează că atunci când se caută un echilibru între performanță, costuri computaționale și viteza de antrenare, GRU este ales frecvent~\cite{korstanje2025gru}. În practică, acest echilibru contează în special când se rulează multe experimente comparative, de exemplu când se compară metode de imputare sau niveluri diferite de lipsuri.
 
 Observație: GRU poate fi o alegere bună ca model de bază (baseline) în experimente comparative, datorită structurii sale mai „ușoare”. Există o mare probabilitate ca diferențele dintre metode să fie vizibile și la modele mai complexe dacă au apărut deja la GRU.
 
 \subsection{Algoritmul GRU}
 
-O celulă GRU are două porți: poarta de resetare și poarta de actualizare. LSTM integrează direct informația temporală în starea ascunsă și nu necesită memorie separată. Această simplificare accelerează antrenarea și reduce numărul de parametri, menținând capacitatea de a modela dependențe utile~\cite{korstanje2025gru, cho2014gru}.
+O celulă GRU are două porți: poarta de resetare și poarta de actualizare. Spre deosebire de LSTM, informația temporală este integrată direct în starea ascunsă, fără memorie separată. Această simplificare accelerează antrenarea și reduce numărul de parametri, fără a sacrifica capacitatea de a modela dependențe temporale utile~\cite{korstanje2025gru, cho2014gru}.
 
 Ecuațiile fundamentale ale unei celule GRU pot fi exprimate astfel~\cite{cho2014gru, korstanje2025gru}:
 
@@ -268,9 +267,9 @@ h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t
 
 Ecuația~\ref{eq:gru_hidden} actualizează starea ascunsă $h_t$ ca un amestec între starea anterioară $h_{t-1}$ și starea candidat $\tilde{h}_t$, ponderat de poarta $z_t$~\cite{cho2014gru, korstanje2025gru}.
 
-În aceste ecuații, $x_t$ este intrarea, $h_{t-1}$ este starea ascunsă anterioară, $z_t$ este poarta de actualizare, $r_t$ este poarta de resetare și $h_t$ este starea candidată. Sigma controlează proporția de informație transmisă, iar dot creează elemente. Când construim informații noi, $z_t$ determină cât din trecut păstrăm, iar $r_t$ determină cât de relevant este trecutul~\cite{korstanje2025gru, cho2014gru}.
+În aceste ecuații, $x_t$ este intrarea, $h_{t-1}$ este starea ascunsă anterioară, $z_t$ este poarta de actualizare, $r_t$ este poarta de resetare, iar $\tilde{h}_t$ este starea candidat. $\sigma$ este funcția sigmoidă, iar $\odot$ este produsul element cu element. Când se construiește informație nouă, $z_t$ determină cât din starea veche se păstrează, iar $r_t$ controlează cât de mult influențează istoricul starea candidat~\cite{korstanje2025gru, cho2014gru}.
 
-Interpretarea este clară. Modelul „acceptă” mai multă informație atunci când $z_t$ este mare, iar $h_{t-1}$ este mic. În mod similar, atunci când influența istoricului nu mai este utilă pentru predicție, $r_t$ poate fi redusă. Rezultatul este o flexibilitate bună, deoarece modelul poate ajusta cantitatea de memorie folosită în funcție de secvența observată.
+Modelul preia mai multă informație nouă când $z_t$ este mare și ignoră mai mult din starea veche. Când influența istoricului nu mai este utilă, $r_t$ scade. Efectul net este că modelul poate ajusta dinamic cantitatea de memorie folosită în funcție de secvența observată.
 
 În sarcini de predicție, ieșirea poate fi scrisă (simplificat) astfel:
 
@@ -281,17 +280,17 @@ Interpretarea este clară. Modelul „acceptă” mai multă informație atunci 
 
 Ecuația~\ref{eq:gru_forecast} descrie etapa de predicție: starea ascunsă $h_t$ este proiectată într-o valoare numerică folosită ca estimare a pasului următor~\cite{cho2014gru, korstanje2025gru}.
 
-În acest caz, $\hat{x}_{t+1}$ este presupunerea pentru pasul următor. În practică, antrenarea reduce o funcție de pierdere între valori reale și prezise, iar GRU poate obține rezultate comparabile cu LSTM cu mai puțini parametri~\cite{korstanje2025gru, cho2014gru}.
+Aici, $\hat{x}_{t+1}$ este valoarea prezisă pentru pasul următor. În practică, antrenarea minimizează o funcție de pierdere între valori reale și prezise, iar GRU poate obține rezultate comparabile cu LSTM folosind mai puțini parametri~\cite{korstanje2025gru, cho2014gru}.
 
 \subsection{Arhitectura GRU}
 
-Arhitectural, GRU este o rețea recurentă de celule care actualizează starea ascunsă folosind intrarea curente și starea anterioară. Ea este unică prin faptul că nu distinge clar o „memorie” de o stare ascunsă. În schimb, informațiile relevante despre trecut sunt concentrate în același vector $h_t$. În comparație, LSTM are o cale dedicată stării de memorie ($c_t$), care modifică modul în care informația este păstrată și filtrată în timp.
+Din punct de vedere arhitectural, GRU este o rețea recurentă de celule care actualizează starea ascunsă folosind intrarea curentă și starea anterioară. Particularitatea sa este că nu separă explicit memoria de starea ascunsă, cum face LSTM cu calea $c_t$. Informațiile relevante despre trecut sunt concentrate în același vector $h_t$.
 
-Din punct de vedere practic, această decizie structurală are repercusiuni evidente. În general, modelul are mai puțini parametri și un flux intern mai mic, iar implementarea devine mai simplă datorită faptului că există mai puține stări de urmărit și operații la fiecare pas. În majoritatea cazurilor, antrenamentul mai rapid și calibrarea mai simplă a hiperparametrilor sunt rezultate, fără a afecta semnificativ performanța. Totuși, evaluarea comparativă rămâne crucială, deoarece diferențele dintre GRU și LSTM depind de problema în cauză și de importanța dependențelor pe termen lung~\cite{korstanje2025gru, cho2014gru}.
+Această decizie structurală are consecințe practice clare. Modelul are mai puțini parametri și un flux intern mai simplu, iar implementarea este mai directă deoarece există mai puține stări de urmărit la fiecare pas. De regulă, antrenamentul este mai rapid și calibrarea hiperparametrilor mai simplă, fără a afecta semnificativ performanța. Totuși, evaluarea comparativă rămâne necesară, deoarece diferențele față de LSTM depind de problemă și de cât de importante sunt dependențele pe termen lung~\cite{korstanje2025gru, cho2014gru}.
 
-Pentru cei care caută eficiență și capacitatea de a surprinde dinamica temporală, GRU este frecvent descris ca o opțiune utilă în literatura recentă despre prognoză. Potrivit lui Korstanje, GRU poate obține rezultate excepționale în scenarii aplicate, în special dacă preprocesarea este efectuată cu atenție și intrarea respectă structura secvențială a problemei~\cite{korstanje2025gru}. În această lucrare, GRU este folosit ca model de referință pentru a vedea cum se modifică performanța atunci când se introduc valori lipsă și se folosesc diferite strategii de imputare.
+Korstanje notează că GRU poate obține rezultate bune în scenarii aplicate, mai ales dacă preprocesarea este îngrijită și intrarea respectă structura secvențială a problemei~\cite{korstanje2025gru}. În această lucrare, GRU este folosit ca model de referință pentru a urmări cum se modifică performanța atunci când se introduc valori lipsă și se folosesc diferite strategii de imputare.
 
-Reprezentarea unei celule GRU și reprezentarea desfășurată în timp a arhitecturii pot fi utilizate pentru a ilustra modul în care funcționează o rețea. Există două porți principale, mecanismul de actualizare a stării ascunse și modul în care informația este răspândită secvențial între pașii temporali, așa cum se arată în aceste imagini.
+Figurile de mai jos prezintă reprezentarea unei celule GRU și forma desfășurată în timp a arhitecturii. Se pot observa cele două porți principale, mecanismul de actualizare a stării ascunse și modul în care informația se propagă secvențial între pașii temporali.
 
 \begin{center}
     \begin{minipage}[b]{0.75\textwidth}
@@ -314,17 +313,17 @@ Reprezentarea unei celule GRU și reprezentarea desfășurată în timp a arhite
     \label{fig:gru_architecture}
 \end{center}
 
-GRU este interesant tocmai datorită acestei combinații: predicții stabile, prețuri mici și antrenament ușor. În această lucrare, GRU este folosit pentru a ajuta la evaluarea unui model recurent contemporan atunci când seria are valori lipsă și este supusă mai multor strategii de imputare. Între simplitatea arhitecturală și capacitatea de memorare, precum și performanța predictivă, compararea RNN și LSTM clarifică un compromis semnificativ.
+GRU este interesant tocmai datorită acestei combinații: predicții stabile, cost computațional redus și antrenament mai rapid. Compararea RNN, LSTM și GRU în contextul acestei lucrări clarifică un compromis concret între simplitatea arhitecturală și capacitatea de memorare pe termen lung, vizibil mai ales când seria are valori lipsă și este supusă diferitelor strategii de imputare.
 
 \newpage
 \section{Framework-uri software relevante}
 
 Partea practică a lucrării implică utilizarea bibliotecilor din ecosistemul Python, care au fost selectate în funcție de funcțiile pe care le îndeplinesc în pipeline-ul experimental: prelucrare de date, antrenare de modele și analiză și vizualizare. Am ales Python pentru că îmi permite să păstrez tot fluxul într-un singur mediu (date $\rightarrow$ preprocesare $\rightarrow$ modelare $\rightarrow$ evaluare), cu suport bun pentru reproducibilitate și iterație rapidă.
 
-Arhitecturile recurente analizate (RNN, LSTM și GRU) sunt implementate în mare parte de biblioteca \textbf{PyTorch}~\cite{paszke2019pytorch}. Flexibilitatea este avantajul principal, deoarece pot defini ușor straturi, pot controla forma tensorilor și pot urmări în mod clar procesul de antrenare.
+Arhitecturile recurente analizate (RNN, LSTM și GRU) sunt implementate cu \textbf{PyTorch}~\cite{paszke2019pytorch}. Principalul avantaj este flexibilitatea: pot defini ușor straturi, pot controla forma tensorilor și pot urmări clar procesul de antrenare.
 
-Am folosit \textbf{NumPy}~\cite{harris2020numpy} și \textbf{Pandas}~\cite{mckinney2010pandas}, care sunt potrivite pentru operații numerice și pentru organizarea seriilor de timp într-un format tabelar. Am folosit aceste programe pentru manipularea datelor. Utilizarea principală a \textbf{scikit-learn} este pentru predicție, folosind componente precum \textit{IterativeImputer}~\cite{buuren2011mice} și \textit{RandomForestRegressor}~\cite{breiman2001rf}, dar și pentru pași suplimentari, cum ar fi validări și transformări~\cite{pedregosa2011sklearn}. Am utilizat \textbf{Matplotlib} pentru grafice de evaluare și comparații între strategii~\cite{hunter2007matplotlib}.
+Pentru manipularea datelor am folosit \textbf{NumPy}~\cite{harris2020numpy} și \textbf{Pandas}~\cite{mckinney2010pandas}, potrivite pentru operații numerice și pentru organizarea seriilor de timp într-un format tabelar. \textbf{scikit-learn} este folosit în principal pentru imputare, prin componente precum \textit{IterativeImputer}~\cite{buuren2011mice} și \textit{RandomForestRegressor}~\cite{breiman2001rf}, dar și pentru validări și transformări suplimentare~\cite{pedregosa2011sklearn}. \textbf{Matplotlib} este folosit pentru graficele de evaluare și comparațiile între strategii~\cite{hunter2007matplotlib}.
 
-\textbf{Streamlit} este folosit pentru a crea o interfață interactivă pentru aplicația experimentală. Am ales acest cadru pentru că permite prototiparea rapidă și, mai important, facilitează repetarea experimentelor cu diferite setări. Am integrat configurarea experimentelor (set de date, procent de valori lipsă, metodă de imputare, hiperparametri) și afișarea rezultatelor comparabile în aplicație.
+\textbf{Streamlit} este folosit pentru interfața interactivă a aplicației experimentale. L-am ales pentru că permite prototiparea rapidă și, mai important, face mai ușoară repetarea experimentelor cu setări diferite. Aplicația integrează configurarea experimentelor (set de date, procent de valori lipsă, metodă de imputare, hiperparametri) și afișarea comparativă a rezultatelor.
 
-Am utilizat \textbf{kagglehub} pentru a accesa setul de date DSMTS, ceea ce face descărcarea și gestionarea dataset-urilor publice mai ușoară. În general, combinația acestor instrumente facilitează un flux experimental coerent, deoarece le permite să rulați rapid variante, să comparați rezultatele și să mențineți o trasabilitate clară a configurațiilor folosite.
+\textbf{kagglehub} este folosit pentru a accesa setul de date DSMTS, simplificând descărcarea și gestionarea dataset-urilor publice. Combinația acestor instrumente asigură un flux experimental coerent: variante noi pot fi rulate rapid, rezultatele pot fi comparate direct, iar configurațiile folosite sunt trasabile.

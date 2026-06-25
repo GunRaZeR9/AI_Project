@@ -1,0 +1,24 @@
+\chapter*{Rezumat}
+\addcontentsline{toc}{chapter}{Rezumat}
+
+Lucrarea analizează impactul valorilor lipsă asupra predicției seriilor de timp cu modele recurente de tip RNN, LSTM și GRU. Valorile lipsă sunt introduse controlat prin mecanismul MCAR (\textit{Missing Completely At Random}) pe două seturi de date cu dinamici diferite: DSMTS, un sistem dinamic simulat multivariabil, și Bitcoin Historical Data, cu volatilitate ridicată. Sunt comparate patru strategii de imputare: transmiterea valorii anterioare (\textit{forward fill}), completarea cu media coloanei, completarea cu media pe fereastră glisantă și imputarea predictivă bazată pe Random Forest.
+
+Experimentele acoperă șase scenarii: comparație directă a strategiilor de imputare, analiza schedulerilor de learning rate, două variante de învățare federată (20 și 50 de runde, 10 utilizatori) și două topologii de ansamblu (paralelă și secvențială). Toate experimentele rulează în aceeași aplicație interactivă, cu aceleași mecanisme de preprocesare și metrici de evaluare (MSE, MAE, RMSE, MAPE).
+
+Rezultatele arată că strategia de imputare influențează performanța finală mai mult decât alegerea arhitecturii sau a topologiei de ansamblu. Completarea cu media globală produce degradare sistematică la procente ridicate de valori lipsă, în timp ce \textit{forward fill} și imputarea predictivă produc rezultate stabile și comparabile. GRU și LSTM depășesc consistent RNN standard, mai ales în prezența imputărilor inadecvate. Contextul federat atenuează parțial efectele imputărilor slabe prin regularizarea implicită a agregării. Ansamblul secvențial aduce îmbunătățiri față de un model singur, dar cu randament marginal descrescător după a doua etapă.
+
+\vspace{1em}
+\noindent\textbf{Cuvinte cheie:} serii de timp, valori lipsă, imputare, MCAR, RNN, LSTM, GRU, învățare federată, ansamblu, prognoză
+
+\vspace{2em}
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+This thesis investigates the impact of missing values on time series forecasting using recurrent neural networks: RNN, LSTM, and GRU. Missing values are introduced in a controlled manner through the MCAR (\textit{Missing Completely At Random}) mechanism on two datasets with distinct dynamics: DSMTS, a simulated multivariate dynamical system, and Bitcoin Historical Data, characterized by high volatility. Four imputation strategies are compared: forward fill, column mean substitution, rolling window mean, and predictive imputation based on Random Forest.
+
+The experiments cover six scenarios: a direct comparison of imputation strategies, an analysis of learning rate schedulers, two federated learning configurations (20 and 50 rounds, 10 users), and two ensemble topologies (parallel and sequential). All experiments run within the same interactive application, using identical preprocessing pipelines and evaluation metrics (MSE, MAE, RMSE, MAPE).
+
+Results show that the imputation strategy has a greater influence on final forecasting performance than the choice of architecture or ensemble topology. Column mean substitution causes systematic degradation at higher missing data rates, while forward fill and predictive imputation yield stable and comparable results. GRU and LSTM consistently outperform plain RNN, particularly when imputation quality is poor. The federated aggregation mechanism partially attenuates the negative effects of weak imputation through implicit regularization. Sequential ensembles improve over a single model, but with rapidly diminishing marginal gains beyond the second stage.
+
+\vspace{1em}
+\noindent\textbf{Keywords:} time series, missing values, imputation, MCAR, RNN, LSTM, GRU, federated learning, ensemble, forecasting

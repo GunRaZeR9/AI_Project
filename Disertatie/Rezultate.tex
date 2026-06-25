@@ -1,0 +1,271 @@
+% ============================================================
+% NOTĂ PENTRU OVERLEAF
+% În fișierul principal (.tex), adăugați în preambul:
+%   \usepackage{float}
+%   \usepackage{booktabs}
+%   \usepackage{graphicx}
+%   \graphicspath{{img/}}
+%
+% Creați folderul "img/" în proiectul Overleaf și încărcați
+% imaginile cu numele ORIGINAL din proiect, cu 3 excepții:
+%
+% Imagini cu nume original (fără modificare):
+%   Fill-0.png                      <- Screenshots/Normal Forecast/Fill-0.png
+%   PredictiveInputer.png           <- Screenshots/Normal Forecast/PredictiveInputer.png
+%   lr_schedulers_test.png          <- Screenshots/lr_schedulers_test.png
+%   training_comparison.png         <- Screenshots/training_comparison.png
+%   StrategyComparison-10U-20R.png  <- Screenshots/Federated Learning/Experiment-10U-20R/StrategyComparison-10U-20R.png
+%   PredictiveInputer-Real-Predicted.png <- Screenshots/Federated Learning/Experiment-10U-20R/PredictiveInputer-Real-Predicted.png
+%   StrategyComparison-10U-50R.png  <- Screenshots/Federated Learning/Experiment-10U-50R/StrategyComparison-10U-50R.png
+%
+% ATENȚIE: cele 3 imagini de mai jos au nume generice conflictuale
+% (două fișiere se numesc "image.png" și unul are spațiu în nume).
+% Redenumiți-le înainte de a le încărca în img/:
+%   parallel_rmse.png          <- Screenshots/Assembly Learning/Paralel Chain/image.png
+%   parallel_diagnostics.png   <- Screenshots/Assembly Learning/Paralel Chain/image copy.png
+%   sequential_diagnostics.png <- Screenshots/Assembly Learning/Sequential Chain/image.png
+% ============================================================
+
+\chapter{Rezultate experimentale}
+
+Acest capitol prezintă rezultatele obținute în cadrul experimentelor descrise în capitolul anterior. Sunt acoperite patru direcții principale: compararea strategiilor de imputare în contextul prognozei standard, analiza comportamentului schedulerilor de learning rate, evaluarea unui scenariu de învățare federată cu configurații diferite de runde și testarea a două topologii de ansamblu, paralelă și secvențială. Toate experimentele folosesc același protocol de evaluare, cu metricile MSE, MAE, MAPE și RMSE calculate pe setul de test, fără nicio suprapunere cu datele de antrenare sau validare.
+
+\section{Comparație strategii de imputare în prognoza standard}
+
+Primul set de experimente urmărește să cuantifice efectul strategiei de imputare asupra acurateței prognozei, independent de alegerea arhitecturii. Fiecare combinație dintre o strategie de imputare și o arhitectură recurentă (RNN, LSTM, GRU) a fost antrenată în condiții identice: același set de date, aceleași hiperparametri de bază, același protocol de evaluare. Scopul nu a fost găsirea celei mai bune configurații posibile, ci izolarea efectului imputării față de ceilalți factori.
+
+\subsection{Rezultate vizuale pe setul DSMTS}
+
+Figurile~\ref{fig:fill-zero} și~\ref{fig:predictive} prezintă două rulări ale modelului GRU pe variabila \textit{bed1} din setul DSMTS, cu normalizare min-max. Configurația este identică în ambele cazuri: 100 de epoci, \textit{learning rate} 0.01, 16 neuroni ascunși, lungime secvență 4, optimizer Adam, funcție de pierdere MSE. Singura diferență este strategia de imputare aplicată înainte de antrenare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{Fill-0}
+    \caption{Prognoza GRU pe variabila \textit{bed1} (DSMTS) cu imputare prin completare cu zero.
+             MSE\,=\,0.483, MAE\,=\,0.601, MAPE\,=\,51.07\%, RMSE\,=\,0.695.}
+    \label{fig:fill-zero}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{PredictiveInputer}
+    \caption{Prognoza GRU pe variabila \textit{bed1} (DSMTS) cu imputare predictivă bazată pe Random Forest.
+             MSE\,=\,0.015, MAE\,=\,0.043, MAPE\,=\,5.18\%, RMSE\,=\,0.121.}
+    \label{fig:predictive}
+\end{figure}
+
+Diferența dintre cele două figuri este substanțială. Cu completare prin zero, modelul GRU produce predicții care urmăresc vag forma generală a seriei, dar rămân sistematic decalate față de valorile reale. MAPE de 51.07\% indică faptul că erorile medii depășesc jumătate din valoarea observată, ceea ce face prognoza practic inutilizabilă în orice scenariu aplicativ. Graficul arată că predicțiile (curba roșie) pierd structura temporală, supraestimând sau subestimând consistent în regiunile cu variații bruște.
+
+Cu imputare predictivă, situația se schimbă. MAPE scade la 5.18\%, iar curba predicțiilor urmărește valorile reale pe toată zona de test. RMSE se reduce de la 0.695 la 0.121, o îmbunătățire de aproape șase ori față de imputarea cu zero. Vizual, predicțiile și valorile observate sunt aproape suprapuse, inclusiv în zonele cu vârfuri și oscilații rapide specifice variabilei \textit{bed1}.
+
+Explicația pentru această diferență stă în modul în care cele două strategii afectează structura seriei înainte de antrenare. Completarea cu zero introduce discontinuități artificiale: observațiile imputate rup lanțul de dependențe temporale, iar modelul recurent nu poate separa valorile reale de cele introduse artificial. Fiecare fereastră de intrare care conține zerouri de imputare transmite modelului un semnal fals despre starea seriei la momentele respective. Imputarea bazată pe Random Forest reconstituie valorile lipsă folosind corelațiile din datele existente, păstrând coerența temporală pe care arhitecturile recurente trebuie să o captureze.
+
+\subsection{Rezultate comparative pe multiple strategii și arhitecturi}
+
+Tabelele~\ref{tab:run1} și~\ref{tab:run2} prezintă rezultatele complete pentru patru strategii de imputare și trei arhitecturi recurente. Cele două rulări corespund unor condiții experimentale diferite, cel mai probabil procentaje distincte de date lipsă simulate, ceea ce explică variațiile dintre ele, mai ales pentru strategia \textit{fill\_mean}.
+
+\begin{table}[H]
+\centering
+\caption{Rezultate comparative, Rularea 1. Valorile MAPE sunt exprimate procentual.}
+\label{tab:run1}
+\begin{tabular}{llrrrr}
+\toprule
+\textbf{Strategie} & \textbf{Model} & \textbf{MSE} & \textbf{MAE} & \textbf{MAPE (\%)} & \textbf{RMSE} \\
+\midrule
+ffill              & GRU  & 2023.93  & 31.95  & 0.048 & 44.99  \\
+ffill              & LSTM & 2624.66  & 40.23  & 0.060 & 51.23  \\
+ffill              & RNN  & 2454.59  & 34.53  & 0.052 & 49.54  \\
+\midrule
+fill\_mean         & GRU  & 36826.36 & 97.65  & 0.146 & 191.90 \\
+fill\_mean         & LSTM & 37926.21 & 103.30 & 0.155 & 194.75 \\
+fill\_mean         & RNN  & 40607.39 & 97.80  & 0.146 & 201.51 \\
+\midrule
+window\_mean       & GRU  & 3275.57  & 46.72  & 0.070 & 57.23  \\
+window\_mean       & LSTM & 1676.36  & 29.47  & 0.044 & 40.94  \\
+window\_mean       & RNN  & 2264.44  & 34.73  & 0.052 & 47.59  \\
+\midrule
+pred. imputer      & GRU  & 1777.09  & 30.60  & 0.046 & 42.16  \\
+pred. imputer      & LSTM & 1761.84  & 31.31  & 0.047 & 41.97  \\
+pred. imputer      & RNN  & 3135.79  & 43.34  & 0.065 & 55.99  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Rezultate comparative, Rularea 2. Valorile MAPE sunt exprimate procentual.}
+\label{tab:run2}
+\begin{tabular}{llrrrr}
+\toprule
+\textbf{Strategie} & \textbf{Model} & \textbf{MSE} & \textbf{MAE} & \textbf{MAPE (\%)} & \textbf{RMSE} \\
+\midrule
+ffill              & GRU  & 2805.72   & 41.13  & 0.062 & 52.97  \\
+ffill              & LSTM & 1959.03   & 33.27  & 0.050 & 44.26  \\
+ffill              & RNN  & 2549.25   & 35.15  & 0.053 & 50.49  \\
+\midrule
+fill\_mean         & GRU  & 127398.16 & 313.99 & 0.470 & 356.93 \\
+fill\_mean         & LSTM & 124009.22 & 231.04 & 0.345 & 352.15 \\
+fill\_mean         & RNN  & 121332.94 & 285.81 & 0.427 & 348.33 \\
+\midrule
+window\_mean       & GRU  & 2687.92   & 34.64  & 0.052 & 51.85  \\
+window\_mean       & LSTM & 3003.18   & 44.63  & 0.067 & 54.80  \\
+window\_mean       & RNN  & 2243.63   & 33.17  & 0.050 & 47.37  \\
+\midrule
+pred. imputer      & GRU  & 2347.87   & 35.19  & 0.053 & 48.45  \\
+pred. imputer      & LSTM & 2138.94   & 35.28  & 0.053 & 46.25  \\
+pred. imputer      & RNN  & 3311.78   & 43.04  & 0.065 & 57.55  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cel mai clar pattern din aceste tabele este comportamentul \textit{fill\_mean}. În Rularea 1, RMSE pentru GRU cu completare prin medie este 191.90. În Rularea 2, același model ajunge la RMSE 356.93, aproape dublu. Celelalte strategii nu prezintă această instabilitate: \textit{ffill} trece de la RMSE 44.99 la 52.97 pentru GRU, \textit{window\_mean} de la 57.23 la 51.85, iar imputarea predictivă de la 42.16 la 48.45. Variațiile există, dar sunt mici și nu indică un pattern sistematic de degradare.
+
+Aceasta sugerează că \textit{fill\_mean} este sensibilă la procentajul de date lipsă: funcționează acceptabil când proporția valorilor absente este mică, dar se degradează rapid pe măsură ce proporția crește. Media globală a coloanei devine o aproximare din ce în ce mai puțin reprezentativă pentru oricare moment temporal specific, mai ales când seria are tendințe, sezonalitate sau variații locale. Spre deosebire de \textit{ffill} sau \textit{window\_mean}, care folosesc valorile observate din vecinătatea temporală a fiecărei lacune, completarea cu medie globală ignoră complet poziția lacunei în serie.
+
+Imputarea predictivă și \textit{ffill} produc rezultate consistente în ambele rulări. Imputarea predictivă obține cel mai bun RMSE în Rularea 1 pentru GRU (42.16) și LSTM (41.97), și rămâne competitivă în Rularea 2. \textit{ffill} produce rezultate similare și are avantajul că nu necesită antrenarea unui model auxiliar, costul computațional al acestei strategii fiind practic neglijabil.
+
+Privind arhitecturile, GRU și LSTM se comportă comparabil pe strategiile bune, cu diferențe sub 10\% între ele în majoritatea cazurilor. RNN standard produce rezultate mai slabe, mai ales cu imputare predictivă în Rularea 2, unde RMSE ajunge la 57.55 față de 46.25 pentru LSTM. Absența mecanismelor explicite de memorie face ca RNN să fie mai susceptibil la perturbările din seria de intrare, perturbări care, chiar și cu o imputare bună, nu dispar complet.
+
+\section{Influența schedulerilor de learning rate}
+
+Alegerea schedulerului de learning rate este tratată deseori superficial în literatura de prognoza seriilor de timp. Experimentele de față testează cinci strategii de planificare a ratei de învățare pentru a observa diferențele în curba de convergență și în pierderea finală obținută.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{lr_schedulers_test}
+    \caption{Evoluția ratei de învățare pentru cinci scheduleri pe parcursul a 100 de epoci:
+             constant, step decay, exponential decay, cosine annealing și warmup cu cosine decay.}
+    \label{fig:lr-schedulers}
+\end{figure}
+
+Figura~\ref{fig:lr-schedulers} prezintă traiectoriile celor cinci scheduleri. Schedulul constant menține rata fixă pe tot parcursul antrenării. Step decay o reduce brusc la fiecare 20 de epoci, producând o curbă în trepte. Exponential decay aplică o reducere continuă cu rata 0.02, generând o curbă netedă spre valori mici. Cosine annealing urmează un profil sinusoidal care coboară progresiv spre un minim predefinit ($10^{-6}$). Warmup cu cosine decay pornește cu o rată mică, o crește liniar în primele 10 epoci, după care aplică un profil cosine.
+
+Diferența dintre scheduleri este vizibilă mai ales în jumătatea a doua a antrenării. Step decay produce salturi discontinue care pot destabiliza antrenarea dacă momentul reducerii nu coincide cu un platou al pierderii. Exponential decay și cosine annealing scad mai lin, dar pot ajunge la valori prea mici prea devreme dacă nu sunt calibrate corespunzător. Warmup cu cosine resolve parțial problema stabilizând antrenarea în fazele timpurii, când gradienții au variabilitate mai mare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{training_comparison}
+    \caption{Comparație training loss pentru schedulerii constant, cosine annealing și warmup cu cosine,
+             în scală logaritmică (stânga) și liniară (dreapta).}
+    \label{fig:training-comparison}
+\end{figure}
+
+Figura~\ref{fig:training-comparison} compară curba de pierdere pentru trei dintre scheduleri: constant, cosine annealing și warmup cu cosine. În scală logaritmică se vede că toate trei converg rapid în primele 5 epoci, după care rata de îmbunătățire scade. Diferențele devin vizibile după epoca 10.
+
+Schedulul constant ajunge la o pierdere finală de aproximativ $10^{-5}$, cel mai mic dintre cele trei. Cosine annealing se stabilizează la aproximativ $3 \times 10^{-5}$, un nivel mai ridicat. O posibilă explicație este că rata de învățare redusă din fazele finale ale cosine annealing nu mai permite ajustări fine, modelul rămânând blocat într-un minim local ceva mai puțin favorabil. Warmup cu cosine coboară mai lent la început, dar recuperează și ajunge la valori comparabile cu schedulul constant.
+
+Graficul liniar arată că warmup cu cosine are cea mai mare pierdere la epoca 0 (aproximativ 0.16), față de constant și cosine annealing care pornesc ambele în jur de 0.10-0.11. Faza de warmup implică pornirea cu o rată mică, deci primele actualizări sunt conservatoare. Aceasta nu este un dezavantaj în sine, ci o strategie de stabilizare utilă mai ales când inițializarea ponderilor produce gradienți mari sau când datele de intrare au variabilitate ridicată. Pe sarcina testată, diferențele finale dintre scheduleri sunt mici, ceea ce sugerează că pentru seturi de date de dimensiuni moderate, alegerea schedulerului are un impact secundar față de alegerea strategiei de imputare sau a arhitecturii.
+
+\section{Experiment federativ: 10 utilizatori, 20 runde}
+
+Scenariul de învățare federată împarte seria temporală cronologic între 10 utilizatori simulați, fiecare antrenând local un model pe segmentul său de date. La finalul fiecărei runde, modelele locale sunt agregate pe server într-un model global prin media ponderată a ponderilor, după care modelul global este punctul de pornire pentru runda următoare. Experimentul testează cinci strategii de imputare aplicate local, fiecare utilizator imputând propriile date înainte de antrenare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{StrategyComparison-10U-20R}
+    \caption{RMSE al modelului global agregat pe parcursul a 20 de runde de antrenare federativă,
+             comparație pe strategii de imputare. 10 utilizatori.}
+    \label{fig:fed-20r-strategies}
+\end{figure}
+
+Figura~\ref{fig:fed-20r-strategies} arată evoluția RMSE global pe parcursul a 20 de runde. Strategia cu completare prin medie pe coloană (curba verde) produce un RMSE global consistent ridicat, între 0.13 și 0.15 pe toată durata experimentului, fără nicio tendință de îmbunătățire după runda inițială. Celelalte patru strategii (forward fill, fill with zero, rolling window mean, predictive Random Forest) converg în primele 3-4 runde la un RMSE în intervalul 0.05-0.08 și rămân stabile acolo.
+
+Față de experimentul de prognoza standard, fill with zero nu mai produce degradarea drastică observată în Figura~\ref{fig:fill-zero}. O explicație plauzibilă este că agregarea ponderilor modelelor locale filtrează parțial efectul imputărilor proaste individuale: chiar dacă un utilizator antrenează pe date imputate cu zero, contribuția sa la modelul global este moderată de contribuțiile celorlalți utilizatori care au imputat altfel. Mecanismul federativ introduce o formă de regularizare implicită față de calitatea datelor locale.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{PredictiveInputer-Real-Predicted}
+    \caption{Predicții ale modelului global agregat și ale modelelor locale individuale
+             pentru cei 10 utilizatori, strategie de imputare predictivă. 10 utilizatori, 20 runde.}
+    \label{fig:fed-20r-predicted}
+\end{figure}
+
+Figura~\ref{fig:fed-20r-predicted} prezintă predicțiile modelului global și ale fiecărui model local individual, pentru strategia cu imputare predictivă. Modelul global (panoul din stânga-sus) obține RMSE 0.1574 și MAE 0.3211 pe întregul set de test cu 860 de observații. Modelele locale au performanțe variate: utilizatorul 1 obține RMSE 0.0340, utilizatorul 3 ajunge la 0.0266, în timp ce utilizatorul 9 se situează la RMSE 0.0911. Aceste diferențe reflectă heterogenitatea segmentelor temporale alocate, fiecare utilizator antrenând pe o porțiune a seriei cu caracteristici proprii (tendințe locale diferite, variabilitate diferită).
+
+Modelul global urmărește tendința generală a seriei pe întregul set de test, în timp ce modelele locale, antrenate pe segmente scurte de 80-90 de observații, produc predicții mai precise pe intervalele lor specifice, dar nu generalizează dincolo de acestea. Aceasta este o caracteristică așteptată a federării în general: modelul global câștigă capacitate de generalizare față de orice model local, dar poate pierde din precizia locală față de modelul antrenat pe un segment omogen.
+
+\section{Experiment federativ: 10 utilizatori, 50 runde}
+
+Al doilea experiment federativ rulează aceeași configurație (10 utilizatori, aceleași strategii de imputare) dar pentru 50 de runde în loc de 20, cu scopul de a determina dacă rundele suplimentare de agregare aduc îmbunătățiri semnificative față de varianta cu 20 de runde.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{StrategyComparison-10U-50R}
+    \caption{RMSE al modelului global agregat pe parcursul a 50 de runde de antrenare federativă,
+             comparație pe strategii de imputare. 10 utilizatori.}
+    \label{fig:fed-50r-strategies}
+\end{figure}
+
+Figura~\ref{fig:fed-50r-strategies} confirmă pattern-ul observat la 20 de runde. Completarea prin medie pe coloană rămâne semnificativ mai slabă față de restul, cu RMSE oscilând în intervalul 0.14-0.16 pe toată durata experimentului. Celelalte strategii se mențin în zona 0.05-0.08 și nu prezintă o tendință sistematică de îmbunătățire după runda 10-15.
+
+Comparând direct cu experimentul de 20 de runde, nu se observă o reducere consistentă a RMSE după runda 20 pentru nicio strategie. Forward fill, rolling window mean și imputarea predictivă ating un nivel de stabilitate după primele 8-10 runde. Fill with zero prezintă variații mai mari de la rundă la rundă (vizibile ca oscilații mai pronunțate în grafic), dar fără o tendință clară de scădere pe termen lung.
+
+Aceasta indică că, pentru configurația testată, 20 de runde sunt suficiente pentru ca modelul global să conveargă. Rularea cu 50 de runde confirmă stabilitatea rezultatelor, dar costul computațional suplimentar nu se justifică prin câștiguri de performanță. Dacă costul comunicației dintre clienți și server este relevant (ceea ce în scenariile federative reale este deseori cazul), reducerea la 15-20 de runde pare o alegere rezonabilă fără pierderi de calitate.
+
+Ierarhia strategiilor stabilită la 20 de runde nu se modifică la 50 de runde. Completarea prin medie rămâne constant inferioară celorlalte strategii indiferent de numărul de runde de agregare. Aceasta arată că problema nu este una de convergență lentă, ci una structurală legată de calitatea datelor de antrenare folosite local de fiecare utilizator.
+
+\section{Ansamblu paralel (topologie independentă)}
+
+Topologia de ansamblu paralelă antrenează mai multe modele independent, pe aceleași date, și agregă predicțiile finale. Experimentul rulează această configurație pentru 25 de iterații, testând același set de strategii de imputare ca în experimentele anterioare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{parallel_rmse}
+    \caption{Evoluția RMSE pe parcursul a 25 de rulări pentru ansamblul paralel independent,
+             pe strategii de imputare.}
+    \label{fig:parallel-rmse}
+\end{figure}
+
+Figura~\ref{fig:parallel-rmse} arată că cele cinci strategii produc performanțe net diferite în contextul ansamblului paralel. Forward fill, rolling window mean și imputarea predictivă cu Random Forest se situează în jurul valorii de 0.10-0.12 RMSE și rămân stabile pe toate cele 25 de rulări. Fill with zero produce un RMSE consistent de aproximativ 0.35-0.40. Completarea cu medie pe coloană ajunge la RMSE în jurul valorii de 0.68-0.72, cel mai slab rezultat observat în toate experimentele.
+
+Spre deosebire de experimentul federativ, unde agregarea modelelor locale a atenuat parțial efectele imputărilor proaste, ansamblul paralel păstrează aceste efecte. Fiecare model din ansamblu antrenează pe date imputate separat, iar predicțiile mediate nu compensează eroarea sistematică introdusă de strategii de imputare inadecvate. Dacă toate modelele din ansamblu văd aceleași distorsiuni în date (de exemplu, zerouri artificiale sau medii globale invariante temporal), predicția medie moștenește aceste distorsiuni. Diversitatea ansamblului nu ajută când sursa erorii este comună tuturor membrilor.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{parallel_diagnostics}
+    \caption{Tablou de diagnostice pentru ansamblul paralel independent: traiectoria RMSE per strategie,
+             distribuția RMSE pe strategii, RMSE mediu per combinație model-strategie
+             și raportul runtime-RMSE.}
+    \label{fig:parallel-diagnostics}
+\end{figure}
+
+Figura~\ref{fig:parallel-diagnostics} oferă o analiză mai detaliată pe patru panouri. Panoul din dreapta-sus (distribuția RMSE pe strategii) confirmă că forward fill, rolling window mean și imputarea predictivă au distribuții înguste și medii apropiate, în timp ce fill with zero și fill with column mean au distribuții mai largi și medii net superioare. Variabilitatea mai mare la fill with zero față de fill with column mean sugerează că primul este mai sensibil la inițializarea modelului, producând rezultate mai impredictibile de la o rulare la alta.
+
+Panoul din stânga-jos (RMSE mediu per combinație model-strategie) arată că LSTM obține cel mai mic RMSE mediu cu imputare predictivă, urmat de GRU. RNN are performanțe mai slabe pe toate strategiile, diferența față de LSTM și GRU fiind mai pronunțată pe strategiile cu imputare slabă (fill with zero, fill with column mean).
+
+Panoul din dreapta-jos (runtime față de RMSE mediu) pune față în față costul computațional și performanța. Imputarea predictivă are runtime mai ridicat față de forward fill sau rolling window, costul provenind din antrenarea modelului Random Forest auxiliar. Pe metrica RMSE, diferența față de forward fill este mică în contextul ansamblului paralel, ceea ce face din forward fill o alternativă rezonabilă dacă timpul de rulare este o constrângere.
+
+\section{Ansamblu secvențial (topologie în lanț)}
+
+Topologia secvențială construiește un lanț de modele în care fiecare etapă încearcă să corecteze reziduurile etapei anterioare. Experimentul testează cinci etape secvențiale și evaluează dacă fiecare etapă suplimentară aduce o reducere măsurabilă a erorii.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{sequential_diagnostics}
+    \caption{Tablou de diagnostice pentru ansamblul secvențial: traiectoria RMSE mediu pe etape,
+             variația RMSE etapă-la-etapă ($\Delta$RMSE), dinamica pierderii pe etape
+             și comparația runtime total față de RMSE final.}
+    \label{fig:sequential-diagnostics}
+\end{figure}
+
+Figura~\ref{fig:sequential-diagnostics} prezintă comportamentul ansamblului secvențial pe patru panouri. Panoul din stânga-sus (traiectoria RMSE mediu pe etape) arată că RMSE scade de la etapa 1 la etapa 2 pentru toate strategiile. Forward fill, rolling window mean și imputarea predictivă coboară de la aproximativ 0.15-0.20 la etapa 1 la 0.08-0.10 la etapa 5. Fill with zero și fill with column mean urmează o dinamică similară, dar cu valori absolute mai ridicate pe tot parcursul lanțului.
+
+Panoul din dreapta-sus ($\Delta$RMSE etapă-la-etapă) arată că randamentul marginal scade rapid. Trecerea de la etapa 1 la etapa 2 produce o reducere vizibilă a RMSE pentru toate strategiile. De la etapa 3 în continuare, $\Delta$RMSE se apropie de zero sau devine negativ pentru unele strategii, indicând că etapele suplimentare nu mai contribuie sau pot introduce mici regresii.
+
+Panoul din stânga-jos (pierderea pe etape) confirmă că fiecare model din lanț antrenează corect, pierderea de validare rămânând mică și stabilă la fiecare etapă. Problema nu este deci una de antrenare insuficientă, ci de utilitate marginală descrescătoare a fiecărei etape suplimentare. După ce un model a redus reziduurile la un anumit nivel, modelul următor din lanț nu mai găsește un pattern consistent de exploatat, mai ales dacă reziduurile rămase sunt apropiate de zgomotul aleator.
+
+Panoul din dreapta-jos (runtime total față de RMSE final) pune în evidență că forward fill și rolling window mean obțin RMSE finale comparabile cu imputarea predictivă, la un cost computațional mai mic. Imputarea predictivă consumă mai mult timp din cauza modelului Random Forest auxiliar, dar nu reduce RMSE final față de strategiile simple în contextul ansamblului secvențial.
+
+O concluzie practică din acest experiment este că un ansamblu secvențial cu 2-3 etape produce câștigul principal față de un model singur. Etapele 4 și 5 adaugă timp de rulare fără a îmbunătăți RMSE în mod consistent.
+
+\section{Sinteză comparativă a rezultatelor}
+
+Privind rezultatele din toate experimentele, câteva observații apar în mod repetat. Prima privește comportamentul \textit{fill\_mean}: este în mod constant cea mai slabă strategie, indiferent de contextul experimental (prognoza standard, federativ sau ansamblu). Degradarea sa este proporțională cu procentajul valorilor lipsă și cu complexitatea dinamicii temporale a seriei. Singura situație în care impactul său este atenuat este contextul federativ, unde agregarea modelelor locale introduce o formă de regularizare implicită, dar chiar și acolo rămâne net inferioară celorlalte strategii.
+
+Forward fill și imputarea predictivă produc rezultate apropiate în toate experimentele, imputarea predictivă câștigând marginal în unele configurații. Dat fiind că forward fill nu necesită antrenarea unui model auxiliar, alegerea dintre ele depinde de dinamica seriei: pe date cu tendințe monotone sau variații lente, forward fill este suficient. Când seria are dinamică complexă sau variații bruște, imputarea cu Random Forest poate oferi o ușoară îmbunătățire justificată prin costul computațional suplimentar.
+
+Referitor la arhitecturi, GRU și LSTM depășesc consistent RNN standard, cu diferențe mai pronunțate la procentaje mai mari de date lipsă sau cu strategii de imputare slabe. Mecanismele explicite de memorie ale LSTM și arhitectura simplificată a GRU se dovedesc mai robuste față de perturbările introduse de datele incomplete sau de imputările inadecvate.
+
+În contextul federativ, numărul de runde de agregare nu influențează semnificativ calitatea finală după ce modelul global converge. Experimentele indică un prag de convergență în jur de 10-15 runde pentru configurația cu 10 utilizatori testată. Rularea cu 50 de runde nu aduce îmbunătățiri față de 20 de runde, confirmând că pragul de convergență este atins relativ devreme.
+
+Ansamblul secvențial aduce îmbunătățiri față de un model singur, dar cu randament descrescător după etapa 2-3. Ansamblul paralel nu compensează automat strategii de imputare slabe, deoarece erorile sistematice comune tuturor modelelor din ansamblu nu se anulează prin agregarea predicțiilor. Calitatea imputării rămâne, în toate configurațiile experimentate, factorul cu cel mai mare impact asupra performanței finale, mai important decât alegerea arhitecturii sau a topologiei de ansamblu.

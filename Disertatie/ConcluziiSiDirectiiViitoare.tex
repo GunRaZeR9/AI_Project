@@ -1,0 +1,71 @@
+\chapter{Concluzii și direcții viitoare}
+
+Lucrarea a urmărit un singur fir: ce se întâmplă cu performanța modelelor recurente când datele de antrenare conțin valori lipsă, și în ce măsură contează cum sunt tratate acele lipsuri. Răspunsul scurt, confirmat de toate experimentele, este că strategia de imputare are un impact mai mare asupra preciziei finale decât alegerea arhitecturii sau a topologiei de ansamblu.
+
+\section{Rezumatul contribuțiilor}
+
+Contribuția principală a lucrării este un cadru experimental integrat pentru studierea efectului valorilor lipsă în prognoza seriilor de timp. Cadrul include: injectarea controlată MCAR cu seed reproductibil, patru strategii de imputare cu complexitate variată, trei arhitecturi recurente (RNN, LSTM, GRU), un scenariu de învățare federată cu 10 utilizatori, și experimente de ansamblu cu topologii paralelă și secvențială. Toate componentele rulează în aceeași aplicație interactivă, cu aceleași mecanisme de preprocesare, metrici și export, ceea ce elimină inconsistențele de comparare care pot apărea când experimente similare sunt rulate în medii separate.
+
+Experimental, au fost acoperite șase direcții principale: compararea strategiilor de imputare în prognoza standard, analiza schedulerilor de learning rate, un scenariu federat cu 20 de runde de agregare, același scenariu extins la 50 de runde, un ansamblu paralel cu 25 de iterații și un ansamblu secvențial cu 5 etape. Datele provin din două seturi cu dinamici diferite: DSMTS, un sistem dinamic simulat cu comportament relativ regulat, și Bitcoin Historical Data, cu volatilitate mai ridicată.
+
+\section{Concluzii principale}
+
+\subsection{Strategia de imputare ca factor dominant}
+
+Cel mai consistent rezultat din toate experimentele este că \textit{fill\_mean} produce cele mai slabe performanțe, indiferent de context. Pe setul DSMTS cu 50\% valori lipsă, MAPE cu imputare prin zero ajunge la 51.07\%, față de 5.18\% cu imputare predictivă, pe o configurație identică a modelului GRU. În experimentele comparative, RMSE pentru \textit{fill\_mean} cu GRU variază de la 191.90 în Rularea 1 la 356.93 în Rularea 2, adică aproape dublu, în timp ce celelalte strategii prezintă variații mult mai mici între rulări (44.99 față de 52.97 pentru \textit{ffill} cu GRU).
+
+Motivul este structural: media globală a coloanei devine o aproximare din ce în ce mai puțin reprezentativă pe măsură ce procentul lipsurilor crește. Spre deosebire de \textit{ffill} sau \textit{window\_mean}, care folosesc valorile observate din vecinătatea temporală a fiecărei lacune, completarea cu medie globală ignoră complet poziția lacunei în serie. Fiecare fereastră de intrare care conține valori imputate cu media globală transmite modelului recurent un semnal fals despre starea seriei la momentele respective.
+
+\textit{Forward fill} și imputarea predictivă bazată pe Random Forest produc rezultate apropiate în toate experimentele. Diferența dintre ele este mică și nu este sistematică: în Rularea 1, imputarea predictivă câștigă marginal pentru GRU (42.16 față de 44.99 RMSE), dar în Rularea 2 diferența se inversează parțial (48.45 față de 52.97). Dat fiind că \textit{ffill} nu necesită antrenarea unui model auxiliar, alegerea practică dintre ele depinde de natura seriei: pe date cu tendințe monotone sau variații lente, \textit{ffill} este suficient; când seria are dinamică complexă, imputarea cu Random Forest poate aduce o ușoară îmbunătățire care justifică costul computațional suplimentar.
+
+\subsection{Arhitecturi recurente în prezența datelor incomplete}
+
+GRU și LSTM se comportă comparabil pe strategiile de imputare bune, cu diferențe sub 10\% între ele în majoritatea configurațiilor. RNN standard produce rezultate mai slabe, mai ales cu strategii de imputare slabe sau cu procente ridicate de lipsuri. Absența mecanismelor explicite de memorie face ca RNN să fie mai susceptibil la perturbările introduse de imputările inadecvate.
+
+Diferențele dintre arhitecturi devin mai pronunțate pe setul Bitcoin față de DSMTS, ceea ce confirmă că volatilitatea seriei amplifică sensibilitatea la calitatea datelor de intrare. Pe DSMTS, chiar și RNN produce rezultate acceptabile cu strategii de imputare bune; pe Bitcoin, alegerea arhitecturii și a strategiei de imputare interacționează mai puternic.
+
+\subsection{Scheduleri de learning rate}
+
+Experimentul cu scheduleri a confirmat că pentru sarcini de prognoză pe serii de timp de dimensiuni moderate, diferența dintre un scheduler bun și unul mai slab este secundară față de alegerea strategiei de imputare. Schedulul constant a obținut pierderea finală cea mai mică (aproximativ $10^{-5}$), în timp ce cosine annealing s-a stabilizat la $3 \times 10^{-5}$, o diferență mai mică decât cea dintre orice două strategii de imputare. Warmup cu cosine este util pentru stabilizarea antrenării când inițializarea ponderilor produce gradienți mari, dar nu aduce câștiguri semnificative pe configurațiile testate.
+
+Concluzia practică este că alegerea schedulerului are sens după ce celelalte variabile experimentale (strategia de imputare, arhitectura, rata de învățare de bază) sunt deja stabilite. Investiția în alegerea schedulerului înainte de fixarea strategiei de imputare ar fi inversarea ordinii de prioritate.
+
+\subsection{Efectul federalizării asupra imputării}
+
+Un rezultat mai puțin anticipat vine din scenariile federate. În contextul federat, efectul negativ al \textit{fill\_zero} este parțial atenuat față de experimentul standard: în experimentul federat cu 20 de runde, \textit{fill\_zero} produce RMSE în intervalul 0.05-0.08, aproape de \textit{ffill} și imputarea predictivă. Același tip de imputare produce MAPE de 51.07\% în scenariul standard pe DSMTS.
+
+Explicația plauzibilă este că agregarea ponderilor modelelor locale introduce o formă de regularizare implicită față de calitatea datelor individuale. Chiar dacă un utilizator antrenează pe date imputate cu zero, contribuția sa la modelul global este moderată de contribuțiile celorlalți utilizatori care au imputat altfel. Aceasta nu înseamnă că imputarea proastă devine acceptabilă în context federat, ci că mecanismul de agregare reduce parțial impactul individual al calității datelor locale.
+
+Referitor la numărul de runde, experimentele indică convergența modelului global după 10-15 runde pentru configurația cu 10 utilizatori. Rularea cu 50 de runde nu aduce îmbunătățiri față de 20 de runde, iar ierarhia strategiilor de imputare nu se modifică cu runde suplimentare. Dacă costul comunicării dintre clienți și server este relevant, reducerea la 15-20 de runde pare o alegere rezonabilă fără pierderi de calitate.
+
+\subsection{Topologii de ansamblu}
+
+Ansamblul secvențial aduce îmbunătățiri față de un model singur, dar cu randament marginal descrescător rapid. Trecerea de la etapa 1 la etapa 2 produce o reducere vizibilă a RMSE pentru toate strategiile; de la etapa 3 în continuare, câștigul per etapă se apropie de zero sau devine negativ pentru unele configurații. O concluzie practică este că un ansamblu secvențial cu 2-3 etape captează câștigul principal, iar etapele suplimentare adaugă timp de rulare fără a îmbunătăți consistent RMSE.
+
+Ansamblul paralel nu compensează automat strategii de imputare slabe. Când toate modelele din ansamblu văd aceleași distorsiuni din datele de antrenare, predicția medie moștenește acele distorsiuni. Aceasta diferă de comportamentul federativ, unde diversitatea geografică sau temporală a datelor locale poate oferi o protecție parțială. Concluzia este că diversitatea ansamblului ajută la reducerea varianței, nu la corectarea erorii sistematice comune tuturor membrilor.
+
+\section{Limitele studiului}
+
+Primul mecanism de generare a lipsurilor folosit este exclusiv MCAR. Mecanismele MAR (\textit{Missing At Random}) și MNAR (\textit{Missing Not At Random}) pot produce distribuții ale lipsurilor structural diferite, mai apropiate de situații reale în domenii ca senzori de mediu sau date financiare~\cite{rubin1976inference, little2002missing}. Concluzia că imputarea predictivă este robustă nu a fost verificată pe lipsuri cu structură dependentă de valoarea seriei sau de alte variabile.
+
+Al doilea aspect este că experimentele au fost rulate pe o singură variabilă țintă per set de date (\textit{bed1} pentru DSMTS și prețul de închidere pentru Bitcoin). Alte coloane din DSMTS pot prezenta dinamici diferite, iar concluziile privind comportamentul relativ al strategiilor de imputare ar putea varia. Același lucru este valabil pentru alte seturi de date din afara celor două testate.
+
+Configurația hiperparametrilor a fost menținută fixă în experimentele comparative, cu valorile implicite ale aplicației. Nu s-a realizat o căutare sistematică a hiperparametrilor optime per configurație, ceea ce înseamnă că diferențele observate între arhitecturi ar putea fi parțial atribuite sensibilității fiecărei arhitecturi la aceste valori implicite, nu exclusiv capacității de modelare.
+
+Scenariul federat folosește partiții cronologice consecutive de dimensiuni egale. Într-un sistem real, utilizatorii ar putea avea distribuții de date eterogene, diferențe în procentajul de valori lipsă sau chiar mecanisme diferite de generare a lipsurilor. Setul de date este mic față de sistemele federate reale, iar numărul de utilizatori (10) este modest.
+
+\section{Direcții viitoare}
+
+Extinderea mecanismelor de lipsuri la MAR și MNAR ar permite verificarea robustetii concluziilor pe distribuții de lipsuri mai realiste. Aceasta implică simularea lipsurilor condiționate de valorile altor coloane sau de valorile seriei țintă înseși, un caz frecvent în datele de senzori (de exemplu, un senzor care eșuează mai des la temperaturi extreme).
+
+O a doua direcție este extinderea imputărilor cu metode mai sofisticate. Lucrarea a comparat metode simple (\textit{ffill}, \textit{fill\_mean}, \textit{window\_mean}) cu imputarea prin Random Forest. Metode bazate pe rețele neurale sau pe modele generative, cum sunt GAIN~\cite{yoon2018gain} sau imputările bazate pe \textit{diffusion models}, pot produce reconstrucții mai fidele ale structurii temporale și merită testate în același cadru comparativ.
+
+Pentru scenariile federate, o extensie firească ar fi testarea cu date heterogene, în care utilizatorii nu dețin partiții consecutive de dimensiuni egale, ci volume și distribuții diferite. Agregarea diferențiată (FedProx sau algoritmi cu ponderare adaptivă în funcție de calitatea datelor locale) ar putea atenua mai eficient efectul utilizatorilor cu date imputate prost.
+
+Ansamblul secvențial testează ideea că un model poate corecta reziduurile altui model, dar configurația folosită nu optimizează ordinea etapelor sau arhitectura fiecărei etape separat. O direcție de cercetare ar fi tratarea construcției lanțului secvențial ca o problemă de optimizare, selectând arhitectura și hiperparametrii fiecărei etape în funcție de reziduurile etapei anterioare, nu fix din configurația globală a barei laterale.
+
+O limitare practică a aplicației actuale este că toate experimentele rulează local, secvențial. Rularea ansamblului cu 100 de membri sau a scenariului federat cu 50 de runde necesită timp considerabil pe hardware obișnuit. Paralelizarea antrenărilor independente pe GPU sau pe mai multe nuclee CPU ar reduce semnificativ durata experimentelor și ar permite explorarea unor spații de hiperparametri mai largi.
+
+\section{Observație finală}
+
+Indiferent de complexitatea scenariului experimental, un lucru a rămas constant: datele de intrare bune contează mai mult decât arhitectura sau strategia de combinare a modelelor. Un GRU antrenat pe date imputate predictiv depășește un ansamblu complex de modele antrenate pe date cu completare prin medie globală. În practică există tentația de a compensa o preprocesare slabă cu modele mai elaborate; experimentele din această lucrare arată că investiția în calitatea imputării aduce câștiguri mai mari decât creșterea complexității modelului, cel puțin pentru configurațiile și seturile de date testate.

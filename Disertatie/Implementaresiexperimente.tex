@@ -1,104 +1,213 @@
 \chapter{Implementare și cadru experimental}
 
-Acest capitol descrie implementarea practică a aplicației dezvoltate pentru analiza impactului valorilor lipsă în predicția seriilor de timp. Accentul este pus pe modul în care componentele software au fost integrate într-un flux unitar: încărcarea datelor, injectarea controlată a valorilor lipsă, imputarea, antrenarea modelelor recurente, monitorizarea în timp real și afișarea rezultatelor. În această etapă sunt prezentate infrastructura tehnică și mecanismele de execuție; analiza detaliată a rezultatelor experimentale este tratată separat.
+Capitolul descrie implementarea aplicației construite pentru analiza impactului valorilor lipsă în predicția seriilor de timp. Componentele software au fost integrate într-un flux coerent care acoperă încărcarea datelor, injectarea controlată a valorilor lipsă, imputarea, antrenarea modelelor recurente, monitorizarea în timp real și afișarea rezultatelor. Fiecare modul al aplicației este prezentat prin capturi din interfața interactivă, astfel că descrierea tehnicilor utilizate poate fi urmărită direct în raport cu configurațiile folosite în experimente. Infrastructura tehnică și mecanismele de execuție sunt prezentate în continuare; analiza detaliată a rezultatelor experimentale este tratată separat, în capitolul următor.
 
 \section{Arhitectura generală a aplicației}
 
-Aplicația este proiectată modular, astfel încât fiecare etapă importantă a procesului de forecasting să poată fi extinsă independent. Din punct de vedere logic, fluxul este împărțit în patru straturi:
+Aplicația este proiectată pe patru straturi funcționale independente, cuplate printr-un modul de orchestrare central.
 
 \begin{itemize}
-	\item stratul de date: încărcare, curățare, injectare de lipsuri și imputare;
-	\item stratul de modelare: definirea arhitecturilor RNN/LSTM/GRU și antrenarea efectivă;
-	\item stratul de evaluare: calculul metricilor și serializarea rezultatelor pentru comparații ulterioare;
-	\item stratul de prezentare: interfața grafică interactivă pentru configurare și monitorizare.
+    \item stratul de date: încărcare, curățare, injectare de lipsuri și imputare;
+    \item stratul de modelare: definirea arhitecturilor RNN/LSTM/GRU și antrenarea efectivă;
+    \item stratul de evaluare: calculul metricilor și serializarea rezultatelor pentru comparații ulterioare;
+    \item stratul de prezentare: interfața grafică interactivă pentru configurare și monitorizare.
 \end{itemize}
 
-Această separare permite păstrarea unui cod ușor de întreținut și reduce cuplarea între logicile de preprocesare, antrenare și vizualizare. În practică, modulul de interfață orchestrează rularea experimentelor, iar modulele specializate execută calculele numerice și antrenarea rețelelor.
+Separarea straturilor reduce cuplarea dintre logicile de preprocesare, antrenare și vizualizare, ceea ce face codul mai ușor de întreținut și extins. Modulul de interfață orchestrează rularea experimentelor, iar modulele specializate execută calculele numerice și antrenarea rețelelor. Același cod de modelare este refolosit în scenariile standard, federate și de ansamblu, ceea ce garantează că diferențele de performanță observate în experimente nu provin din inconsistențe de implementare.
 
 \section{Tehnologii utilizate}
 
-Implementarea este realizată în Python, cu un ecosistem orientat pe analiză numerică și învățare automată. Prelucrarea seriilor de timp și operațiile tabulare sunt realizate cu \textit{Pandas}~\cite{mckinney2010pandas}, iar calculele vectoriale cu \textit{NumPy}~\cite{harris2020numpy}. Pentru antrenarea rețelelor neurale recurente este utilizat \textit{PyTorch}~\cite{paszke2019pytorch}. Vizualizările sunt generate cu \textit{Matplotlib}~\cite{hunter2007matplotlib}, iar partea de imputare predictivă se bazează pe componente din \textit{scikit-learn}~\cite{pedregosa2011sklearn}, inclusiv estimatorul \textit{Random Forest}~\cite{breiman2001rf}.
+Implementarea este realizată în Python, cu un ecosistem orientat pe analiză numerică și învățare automată. Prelucrarea seriilor de timp și operațiile tabulare sunt realizate cu \textit{Pandas}~\cite{mckinney2010pandas}, iar calculele vectoriale cu \textit{NumPy}~\cite{harris2020numpy}. Antrenarea rețelelor neurale recurente folosește \textit{PyTorch}~\cite{paszke2019pytorch}. Vizualizările sunt generate cu \textit{Matplotlib}~\cite{hunter2007matplotlib}, iar imputarea predictivă se bazează pe componente din \textit{scikit-learn}~\cite{pedregosa2011sklearn}, inclusiv estimatorul \textit{Random Forest}~\cite{breiman2001rf}.
 
-Această alegere tehnologică a fost motivată de trei criterii: flexibilitate pentru prototipare, maturitate a bibliotecilor și posibilitatea de a integra rapid componente interactive într-un cadru reproductibil.
+Alegerea acestui ecosistem a fost motivată de maturitatea bibliotecilor, de flexibilitatea pentru prototipare rapidă și de posibilitatea de a integra componente interactive într-un cadru reproductibil. Python și PyTorch sunt larg utilizate în cercetarea academică pe serii de timp, ceea ce facilitează compararea cu rezultate din literatura de specialitate și reproducerea configurațiilor din lucrările de referință.
 
 \section{Organizarea implementării}
 
-Codul este împărțit pe module funcționale, fiecare responsabil de o etapă distinctă:
+Codul este împărțit pe module funcționale, fiecare responsabil de o etapă distinctă din fluxul experimental:
 
 \begin{itemize}
-	\item modulele de prelucrare a datelor gestionează încărcarea seturilor DSMTS și Bitcoin, injectarea MCAR și aplicarea strategiilor de imputare;
-	\item modulele de \textit{training} gestionează inițializarea modelelor, ciclurile pe epoci, validarea și păstrarea stărilor;
-	\item modulele de \textit{inference} realizează predicția one-step-ahead și denormalizarea rezultatelor;
-	\item modulele de metrici calculează MSE, MAE, RMSE și MAPE;
-	\item modulele de interfață expun elementele de control, graficele și tabelele de comparație.
+    \item modulele de prelucrare a datelor gestionează încărcarea seturilor DSMTS și Bitcoin, injectarea MCAR și aplicarea strategiilor de imputare;
+    \item modulele de \textit{training} gestionează inițializarea modelelor, ciclurile pe epoci, validarea și păstrarea stărilor;
+    \item modulele de \textit{inference} realizează predicția one-step-ahead și denormalizarea rezultatelor;
+    \item modulele de metrici calculează MSE, MAE, RMSE și MAPE;
+    \item modulele de interfață expun elementele de control, graficele și tabelele de comparație.
 \end{itemize}
 
-Prin această structură, aceeași infrastructură poate susține mai multe moduri de rulare: experiment standard, scenariu federat și scenarii de ansamblu. În plus, codul permite extinderea relativ simplă cu noi strategii de imputare sau noi arhitecturi recurente.
+Aceeași infrastructură susține mai multe moduri de rulare: experiment standard, scenariu federat și scenarii de ansamblu. Codul permite extinderea cu noi strategii de imputare sau noi arhitecturi recurente fără modificări majore ale celorlalte module, ceea ce a permis adăugarea iterativă a scenariilor mai complexe pe parcursul dezvoltării.
 
-\section{Componentele interfeței interactive}
+\section{Interfața aplicației}
 
-Interfața este construită ca aplicație interactivă de experimentare, în care utilizatorul controlează direct parametrii principali ai fluxului. Elemente esențiale disponibile în interfață:
+Interfața este structurată în două zone principale: o bară laterală pentru configurare și o zonă centrală organizată pe tab-uri tematice. Bara laterală conține toți parametrii comuni ai experimentului, accesibili indiferent de tab-ul activ din zona centrală. Tab-urile disponibile sunt: \textit{GRU Forecast}, \textit{Experiment Overview}, \textit{Custom Plotting}, \textit{Ensemble Experiment}, \textit{Federated Learning} și \textit{Missing Value Preview}.
 
-\begin{itemize}
-	\item alegerea setului de date și a coloanei țintă;
-	\item controlul procentului de valori lipsă injectate pe variabile;
-	\item selecția strategiei de imputare;
-	\item configurarea hiperparametrilor de antrenare (lungime secvență, \textit{hidden size}, număr de straturi, \textit{dropout}, optimizator, funcție de pierdere, epoci);
-	\item rularea studiilor comparative și exportul rezultatelor în format tabelar.
-\end{itemize}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{InterfaceFull.png}
+    \caption{Vederea generală a aplicației cu tab-ul \textit{GRU Forecast} activ. Bara laterală din stânga conține configurațiile de date, injectare MCAR, strategie de imputare și parametrii de antrenare. Zona centrală prezintă titlul setului de date, arhitectura GRU și butonul de rulare.}
+    \label{fig:interface_full}
+\end{figure}
 
-Avantajul major al interfeței este că transformă protocolul experimental într-un proces observabil și repetabil. Utilizatorul poate modifica o singură variabilă experimentală și poate evalua imediat efectul asupra pierderii la antrenare și asupra metricilor finale.
+Figura~\ref{fig:interface_full} prezintă aspectul general al aplicației cu setul DSMTS (\textit{Dynamical System Multivariate Time Series}) încărcat. Setul are 4000 de rânduri, 17 coloane și variabila țintă \textit{bed1}. Arhitectura GRU folosită în tab-ul de forecast de bază are formula one-step-ahead $\hat{x}_{t+1} = Wh_t + b$, iar predicțiile pe setul de test sunt generate recursiv pe orizontul de timp configurat.
+
+Navigarea între tab-uri nu resetează starea bării laterale, astfel că aceeași configurație poate fi testată succesiv în toate modulele fără re-introducerea parametrilor. Această decizie de design a simplificat colectarea datelor comparative din experimente: o configurație fixată în bara laterală se propagă automat în scenariile standard, federate și de ansamblu, eliminând o sursă potențială de inconsistențe între rulări.
+
+\section{Configurarea datelor și injectarea valorilor lipsă}
+
+Prima secțiune a bării laterale concentrează configurarea setului de date și parametrii injectării MCAR.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.62\textheight, keepaspectratio]{SideBar1.png}
+    \caption{Prima secțiune a barei laterale: selecția setului de date (DSMTS), numărul de rânduri (4000), coloana țintă (\textit{bed1}), sliderul MCAR setat la 50\%, cache-ul imputerului predictiv (gata), strategia de imputare (\textit{Fill with column mean}) și proporțiile train/test/validation.}
+    \label{fig:sidebar1}
+\end{figure}
+
+Panoul \textit{Dataset source} din Figura~\ref{fig:sidebar1} permite selecția setului de date. Aplicația suportă DSMTS (\textit{patrickfleith}) și setul Bitcoin Historical Data. Numărul de rânduri utilizate este configurabil; implicit se folosesc cele mai recente 4000 de înregistrări, ceea ce permite rulări repetabile pe ferestre temporale comparabile între diferitele experimente.
+
+Panoul \textit{Forecast target} specifică coloana de prezis. Pentru DSMTS, coloana implicită este \textit{bed1}, una dintre cele 17 variabile din setul multivariat. Injectarea valorilor lipsă se face prin mecanismul MCAR~\cite{rubin1976inference, little2002missing}: un slider reglează procentul de NaN-uri injectate în coloana țintă, cu un seed fix care asigură reproductibilitatea pozițiilor lipsă pentru același procent. În captura din Figura~\ref{fig:sidebar1}, sliderul este setat la 50\%, configurație folosită în experimentul comparativ principal pe DSMTS.
+
+Panoul \textit{Predictive imputer cache} gestionează imputerul bazat pe Random Forest. Antrenarea unui estimator Random Forest poate dura câteva secunde, ceea ce ar fi adăugat timp suplimentar la fiecare rulare din experimentele comparative. Aplicația rezolvă această problemă prin pre-antrenarea și salvarea estimatorului pe disc (\textit{rf\_imputer.joblib}). Odată salvat, imputerul este reutilizat în toate rulările cu aceeași configurație de date, fără a fi re-antrenat la fiecare execuție. Statusul \textit{ready} din captură confirmă că estimatorul este disponibil.
+
+Panoul \textit{Imputation for training} selectează strategia de imputare aplicată înainte de antrenare. Opțiunile disponibile sunt: \textit{Forward fill}, \textit{Fill with column mean}, \textit{Rolling window mean} și \textit{Predictive imputer}. Strategia \textit{fill\_zero} nu a fost inclusă în fluxul principal, din cauza comportamentului instabil observat pe setul Bitcoin la procente ridicate de lipsuri, detaliat în secțiunea de observații empirice.
+
+Panoul \textit{Train / test split} configurează proporțiile setului de antrenare, validare și test prin slidere. Implicit, testul ocupă 20\% și validarea 10\% din date. Parametrul \textit{Future forecast steps} controlează orizontul de predicție vizualizat după antrenare, setat la 50 de pași în configurația implicită.
+
+\section{Configurarea modelului și a hiperparametrilor de antrenare}
+
+A doua secțiune a bării laterale conține configurația arhitecturii și a procesului de antrenare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=0.62\textheight, keepaspectratio]{SideBar2.png}
+    \caption{A doua secțiune a barei laterale: selecția arhitecturii (GRU/LSTM/RNN), normalizare (\textit{minmax}), lungime secvență (4), hidden units (16), epoci (100), rată de învățare (0.01), straturi (2), funcție de activare (\textit{relu}), dropout (0), optimizer (\textit{adam}), funcție de pierdere (\textit{mse}), regularizare L1 și L2.}
+    \label{fig:sidebar2}
+\end{figure}
+
+Panoul \textit{Model} din Figura~\ref{fig:sidebar2} permite selecția arhitecturii recurente: RNN simplu, LSTM sau GRU~\cite{hochreiter1997lstm, cho2014gru, sherstinsky2020rnn}. Secțiunea \textit{Hyperparameters} expune parametrii principali de antrenare prin slidere și câmpuri numerice. Normalizarea datelor se alege dintre \textit{minmax} și standardizare. Lungimea secvenței de intrare (\textit{seq\_len}) determină câți pași anteriori sunt folosiți pentru a prezice pasul următor; în configurația implicită este setat la 4. Numărul de unități ascunse (\textit{hidden units}) controlează capacitatea modelului (16 în captură), iar numărul de epoci reglează durata antrenării (100 în captură).
+
+Rata de învățare inițială se configurează printr-un slider logaritmic; valoarea implicită este 0.01. Secțiunea \textit{Network architecture} adaugă parametri de structură: numărul de straturi recurente stivuite (2), funcția de activare (\textit{relu}) și rata de dropout (0 în configurația implicită). Secțiunea \textit{Optimizer \& loss} permite selecția optimizatorului (Adam sau SGD) și a funcției de pierdere (MSE, MAE sau Huber), cu parametri opționali L1 și L2 pentru regularizare, ambii setați la 0 în configurația de bază.
+
+Combinația Adam cu MSE reprezintă configurația de referință folosită în experimentele comparative, deoarece Adam converge mai rapid decât SGD pe serii de timp pentru aceste dimensiuni de model, iar MSE penalizează simetric erorile mari față de MAE.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.52\textwidth]{SideBar3.png}
+    \caption{Secțiunea de planificare a ratei de învățare: strategia \textit{cosine annealing} selectată și rata minimă de 1e-6.}
+    \label{fig:sidebar3}
+\end{figure}
+
+Bara laterală include și un panou dedicat planificării ratei de învățare, prezentat în Figura~\ref{fig:sidebar3}. Cinci strategii sunt disponibile: constantă, step decay, exponențial, cosine annealing și warmup urmat de cosine annealing. Rata minimă de învățare se configurează separat față de rata inițială. Această componentă a fost adăugată pentru a permite analiza comparativă a schedulerelor, studiată în unul dintre experimentele prezentate în capitolul următor. Configurația din captură folosește cosine annealing cu rata minimă 1e-6, care reduce rata de învățare urmând o curbă cosinusoidală de la valoarea inițială până la minimul specificat pe durata antrenării.
+
+\section{Modulul de comparare a experimentelor}
+
+Tab-ul \textit{Experiment Overview} permite rularea automată a combinațiilor dintre arhitecturi și strategii de imputare, fără re-configurare manuală pentru fiecare combinație.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{ExperimentOverview.png}
+    \caption{Tab-ul \textit{Experiment Overview} cu trei arhitecturi selectate (GRU, LSTM, RNN) și patru strategii de imputare. Configurația planifică 12 rulări (3 modele $\times$ 4 strategii), cu grafice de bare grupate pe RMSE și hărți de căldură pe MSE și RMSE.}
+    \label{fig:experiment_overview}
+\end{figure}
+
+Figura~\ref{fig:experiment_overview} prezintă configurarea modulului pentru experimentul comparativ principal. Utilizatorul selectează una sau mai multe arhitecturi și una sau mai multe strategii de imputare prin câmpuri multi-select cu etichete. Numărul de rulări planificate este calculat automat: 3 modele $\times$ 4 strategii produc 12 experimente în configurația din captură. Metrica pentru graficul de bare grupat se alege separat (RMSE), iar hărțile de căldură pot fi configurate să afișeze MSE, RMSE sau ambele simultan.
+
+La apăsarea butonului \textit{Run Overview Experiment}, aplicația parcurge sistematic toate combinațiile, antrenând fiecare model cu fiecare strategie de imputare pe aceeași configurație a bării laterale. Rezultatele sunt prezentate în hărți de căldură și grafice de bare grupate, permițând identificarea vizuală a combinațiilor cu cele mai bune sau cele mai slabe performanțe. Exportul rezultatelor în format CSV este disponibil după fiecare rulare.
+
+Faptul că toate combinațiile rulează cu aceeași configurație din bara laterală garantează comparabilitatea: normalizarea, lungimea secvenței, numărul de epoci, rata de învățare și toți ceilalți hiperparametri sunt identici pentru toate cele 12 combinații dintr-o sesiune. Datele comparative prezentate în capitolul de rezultate au fost generate cu acest modul.
 
 \section{Vizualizarea valorilor lipsă și compararea imputării}
 
-Un element central al implementării este panoul de previzualizare pentru valori lipsă. Acesta afișează, pentru coloanele selectate, atât seria originală cu lipsuri, cât și seriile reconstruite prin strategii diferite de imputare. Astfel, comparația nu rămâne doar numerică, ci devine și vizuală.
+Tab-ul \textit{Missing Value Preview} oferă o comparație vizuală a strategiilor de imputare pe coloana selectată, înainte de antrenarea oricărui model.
 
-Din perspectivă metodologică, acest modul sprijină analiza calitativă a mecanismelor de completare. Pentru date injectate MCAR~\cite{rubin1976inference, little2002missing}, comportamentul strategiilor simple poate fi comparat cu imputarea predictivă inspirată de abordările \textit{MICE}/\textit{MissForest}~\cite{buuren2011mice, stekhoven2012missforest}. În practică, acest lucru ajută la identificarea strategiilor care conservă mai bine dinamica locală a seriei și evită artefactele puternice.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{MIssingValuePreview.png}
+    \caption{Tab-ul \textit{Missing Value Preview} pentru coloana \textit{bed1} cu 50\% NaN-uri injectate. Cele cinci panouri prezintă seria cu valori lipsă (\textit{missing}), seria completată prin \textit{ffill}, \textit{fill\_mean}, \textit{window\_mean} și \textit{predictive\_imputer}.}
+    \label{fig:missing_value_preview}
+\end{figure}
+
+Figura~\ref{fig:missing_value_preview} prezintă captura pentru coloana \textit{bed1} cu 50\% NaN-uri injectate. Cele cinci panouri afișate sunt: seria originală cu lipsuri marcate, seria completată prin \textit{ffill} (forward fill), completarea cu media coloanei (\textit{fill\_mean}), completarea cu media pe fereastră glisantă (\textit{window\_mean}) și imputarea predictivă (\textit{predictive\_imputer}). Modulul folosește ultimele 3000 de rânduri din cele 4000, pentru a menține viteza de previzualizare.
+
+Diferențele vizuale sunt clare chiar la o inspecție rapidă. \textit{Forward fill} prelungește ultima valoare validă pe durata întregii secvențe lipsă, ceea ce produce platouri orizontale vizibile în serie atunci când NaN-urile consecutive sunt numeroase. \textit{Fill\_mean} înlocuiește fiecare NaN cu aceeași valoare globală a coloanei, adăugând o componentă constantă care ignoră complet dinamica locală. \textit{Window\_mean} calculează media pe o fereastră glisantă și atenuează parțial artefactele, dar poate netezi tranzițiile bruște. \textit{Predictive\_imputer} folosește un estimator Random Forest antrenat pe celelalte coloane pentru a prezice valorile lipsă, obținând o reconstrucție care urmărește mai fidel forma seriei originale.
+
+La procente mari de lipsuri, cum este cel de 50\% din captură, diferența dintre strategii devine evidentă: platourile produse de \textit{ffill} sau constanta adăugată de \textit{fill\_mean} pot introduce artefacte care afectează antrenarea modelelor recurente pe secvențe lungi de valori identice.
+
+Modulul permite analiza calitativă a mecanismelor de completare, alături de analiza cantitativă prin MSE și RMSE. Pentru date injectate MCAR~\cite{rubin1976inference, little2002missing}, comportamentul strategiilor simple poate fi comparat cu imputarea predictivă inspirată de abordările \textit{MICE} și \textit{MissForest}~\cite{buuren2011mice, stekhoven2012missforest}, identificând strategiile care conservă dinamica locală a seriei fără a introduce artefacte în antrenarea modelelor recurente.
 
 \section{Antrenare live și monitorizare în timp real}
 
-Aplicația include un mecanism de antrenare live, în care evoluția modelului este urmărită pe parcursul epocilor. Pentru fiecare rulare sunt actualizate în interfață:
+Aplicația include un mecanism de antrenare live, în care evoluția modelului este urmărită pe parcursul epocilor. Pentru fiecare rulare sunt actualizate în interfață curba \textit{train loss}, curba \textit{validation loss}, starea curentă a execuției (epoca activă, modelul și strategia în lucru) și timpul scurs.
 
-\begin{itemize}
-	\item curba \textit{train loss};
-	\item curba \textit{validation loss};
-	\item starea curentă a execuției (epoca activă, model, strategie);
-	\item timpul de rulare.
-\end{itemize}
+Graficul de pierdere se actualizează la fiecare epocă, permițând observarea timpurie a divergenței, a supraînvățării sau a unei convergențe insuficiente. Aceasta are o utilitate practică în experimentele comparative cu 12 combinații: modelele cu comportament instabil pot fi identificate fără a aștepta terminarea întregii sesiuni de rulare. Dacă rata de învățare este prea mare sau numărul de epoci este insuficient pentru convergență, curba de pierdere semnalează problema în primele epoci.
 
-Această monitorizare are rol practic important: permite observarea timpurie a divergenței, a supraînvățării sau a unei convergențe insuficiente. În plus, oferă transparență asupra diferențelor de comportament între arhitecturile recurente (RNN, LSTM, GRU), discutate în literatura de specialitate~\cite{hochreiter1997lstm, sherstinsky2020rnn, cho2014gru}.
+Diferențele de comportament între arhitecturi devin observabile pe curbele de pierdere. RNN simplu tinde să producă curbe mai instabile la secvențe lungi, din cauza problemei gradientului dispărut~\cite{hochreiter1997lstm}. LSTM și GRU produc, în general, convergențe mai regulate, dar diferențele depind de configurația specifică a hiperparametrilor și de caracteristicile seriei de timp utilizate. Monitorizarea live permite ajustarea rapidă a configurației înainte de a rula sesiunea completă cu toate cele 12 combinații.
 
-\section{Suport pentru scenarii extinse: federat și ansamblu}
+\section{Scenariul de învățare federată}
 
-Deși rezultatele acestor scenarii sunt analizate în capitolele următoare, implementarea include deja infrastructura completă pentru:
+Tab-ul \textit{Federated Learning} configurează și rulează scenariile de învățare federată, în care modelele locale sunt antrenate pe partiții disjuncte ale datelor, iar agregarea globală urmează schema FedAvg~\cite{mcmahan2017fedavg, kairouz2021fl}.
 
-\begin{itemize}
-	\item învățare federată pe utilizatori, cu agregare iterativă a modelelor locale (stil \textit{FedAvg})~\cite{mcmahan2017fedavg, kairouz2021fl};
-	\item experimente de ansamblu (configurații independente și secvențiale), motivate de principiile metodelor \textit{ensemble}~\cite{dietterich2000ensemble, zhou2012ensemble}.
-\end{itemize}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{FederatedLearning.png}
+    \caption{Tab-ul \textit{Federated Learning Study}: configurarea numărului de utilizatori (5), metodei de agregare (\textit{mean}), numărului de runde federate (5), epocilor locale per rundă (100, preluate din bara laterală) și metricii de monitorizare live (RMSE).}
+    \label{fig:federated_learning}
+\end{figure}
 
-Integrarea acestor scenarii în aceeași aplicație are un avantaj metodologic clar: toate experimentele rulează pe aceleași mecanisme de preprocesare, aceleași metrici și aceeași logică de evaluare, ceea ce crește comparabilitatea și reduce riscul de inconsistențe între experimente.
+Figura~\ref{fig:federated_learning} prezintă interfața pentru scenariul federat. Parametrii configurabili sunt: numărul de utilizatori (partiții de date), metoda de agregare (\textit{mean} sau \textit{median}), numărul de runde federate și metrica de monitorizare live. Numărul de epoci locale per rundă este preluat direct din bara laterală, ceea ce menține consistența cu experimentele standard: același număr de epoci folosit în experimentul de bază este aplicat și antrenării locale din fiecare rundă.
 
-\section{Exportul și trasabilitatea rulărilor}
+Modulul rulează automat toate strategiile de imputare, una câte una, fără intervenție manuală. Mesajul informativ din interfață precizează că fiecare strategie primește propria secțiune de rezultate cu acoperire completă a modelelor, și că strategia selectată în bara laterală nu filtrează scenariul federat ci este ignorată în favoarea parcurgerii exhaustive. Aceasta permite compararea directă a strategiilor de imputare în contextul federat, fără rulări separate.
 
-Pentru fiecare execuție, aplicația exportă rezultatele într-un format tabelar (CSV), incluzând strategia de imputare, tipul modelului, metricile, pierderile finale și timpul de rulare. Acest format simplifică analiza comparativă ulterioară și permite includerea directă a rezultatelor în documentarea academică.
+Datele sunt partiționate în secțiuni consecutive de dimensiuni egale. Fiecare utilizator antrenează un model local pe propria partiție pentru numărul configurat de epoci locale, după care modelele locale sunt agregate la server prin media sau mediana ponderilor. Procesul se repetă pentru fiecare rundă federată, iar metrica RMSE pe setul de test global este monitorizată la fiecare rundă. Configurația din captură, cu 5 utilizatori și 5 runde, a fost extinsă ulterior la 10 utilizatori și 20 sau 50 de runde pentru experimentele principale prezentate în capitolul de rezultate.
 
-Trasabilitatea este susținută prin păstrarea configurațiilor de rulare și a statusului fiecărui experiment (\textit{ok}/\textit{error}). Astfel, analiza rezultatelor poate fi refăcută și verificată în condiții similare, ceea ce este esențial pentru reproducibilitate.
+Scenariul reproduce un caz simplificat de federated learning în care datele nu pot fi centralizate, fiecare utilizator deținând o fereastră temporală distinctă din seria de timp. Deși este mai simplu decât un sistem federat real cu date eterogene sau comunicare asincronă, configurația permite analiza modului în care calitatea imputării locale afectează modelul global agregat după mai multe runde de agregare FedAvg.
+
+\section{Scenariul de ansamblu}
+
+Tab-ul \textit{Ensemble Experiment} configurează experimente de ansamblu cu două topologii distincte.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{EnsembleExperiment.png}
+    \caption{Tab-ul \textit{Ensemble Experiment}: selecția topologiei (independent cu fuziune finală sau lanț secvențial), modelele membre (GRU, RNN, LSTM, MLP, TCN), strategiile de imputare (4) și numărul de seed-uri (5). Configurația estimează 100 de membri (5 modele $\times$ 5 seed-uri $\times$ 4 strategii).}
+    \label{fig:ensemble_experiment}
+\end{figure}
+
+Figura~\ref{fig:ensemble_experiment} prezintă interfața cu topologia paralelă selectată și configurația completă pentru experimentele de ansamblu. Prima topologie, \textit{Independent models + final fusion}, antrenează modele independente pe același set de date și combină predicțiile printr-un model de fuziune final. Fiecare model este antrenat cu seed-uri diferite pentru a captura variabilitatea stocastică, iar predicțiile tuturor membrilor sunt agregate prin fuziune. A doua topologie, \textit{Sequential chained pipeline}, construiește un lanț în care fiecare etapă primește atât intrarea originală, cât și predicția etapei anterioare; nu există un pas de fuziune, ieșirea ultimei etape fiind predicția finală.
+
+Modulul acceptă o gamă mai largă de arhitecturi decât tab-ul de bază: pe lângă GRU, LSTM și RNN, sunt disponibile și MLP (perceptron multistrat) și TCN (\textit{Temporal Convolutional Network}). Numărul de seed-uri controlează câți membri independenți sunt antrenați per combinație model-strategie. Configurația din captură, cu 5 modele, 5 seed-uri și 4 strategii, estimează 100 de membri; aceasta este configurația folosită în experimentul de ansamblu paralel prezentat în capitolul de rezultate.
+
+Ansamblurile au o motivație metodologică solidă în literatura de specialitate~\cite{dietterich2000ensemble, zhou2012ensemble}: combinarea predictorilor independenți reduce varianța față de orice model individual, producând rezultate mai stabile. Scenariul secvențial testează o ipoteză diferită, și anume că o serie de modele specializate care rafinează progresiv predicția poate concura cu un singur model de capacitate mare, pe același număr total de parametri.
+
+\section{Modul de vizualizare personalizată și exportul datelor}
+
+Tab-ul \textit{Custom Plotting} permite construirea de grafice personalizate pe baza datelor din sesiunea curentă sau din fișiere CSV externe, cu posibilitatea de a ascunde non-distructiv punctele problematice din vizualizare.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{CustomPlotting.png}
+    \caption{Tab-ul \textit{Custom Plotting}: sursă de date configurabilă (sesiune curentă sau CSV upload). Interfața afișează starea inițială, fără date încărcate.}
+    \label{fig:custom_plotting}
+\end{figure}
+
+Figura~\ref{fig:custom_plotting} prezintă interfața goală a modulului, înainte de încărcarea datelor. Sursa de date poate fi fie sesiunea curentă (rezultatele calculate în tab-urile active), fie un fișier CSV încărcat manual prin drag-and-drop sau browser. Dimensiunea maximă acceptată este de 200 MB per fișier. Ascunderea punctelor problematice din vizualizare se face non-distructiv: datele originale nu sunt modificate, ci doar excluse din afișare, ceea ce permite revizualizarea fără pierderea datelor brute.
+
+Această funcționalitate a fost folosită pentru construirea graficelor incluse în lucrare: după exportul rezultatelor din \textit{Experiment Overview}, fișierele CSV au fost re-importate în \textit{Custom Plotting} pentru generarea vizualizărilor finale cu ajustări ale scalei și ale punctelor afișate.
+
+Exportul rezultatelor este disponibil și din celelalte tab-uri. Fiecare execuție produce un fișier CSV care conține strategia de imputare, tipul modelului, metricile (MSE, MAE, RMSE, MAPE), pierderile finale și timpul de rulare. Formatul tabelar simplifică analiza comparativă ulterioară și permite includerea directă a valorilor în tabelele din documentare. Trasabilitatea este asigurată prin păstrarea configurațiilor de rulare și a statusului fiecărui experiment (\textit{ok}/\textit{error}), ceea ce permite refacerea analizei în condiții similare.
 
 \section{Observații empirice din rulările curente}
 
-Pe baza seriilor de experimente rulate în această etapă, au fost identificate diferențe clare de sensibilitate între seturile de date și strategiile de imputare.
+Pe baza seriilor de experimente rulate, au fost identificate diferențe clare de sensibilitate între seturile de date și strategiile de imputare.
 
-Pentru setul \textit{Bitcoin Historical Data}, strategiile \textit{fill\_zero} și \textit{fill with column mean} s-au dovedit sensibile la creșterea procentului de valori lipsă. În special pentru niveluri medii și ridicate ale lipsurilor, aceste două abordări pot amplifica erorile și pot destabiliza performanța modelelor recurente. Din acest motiv, \textit{fill\_zero} a fost exclusă din fluxul principal de experimente, iar \textit{fill\_mean} a fost tratată cu prudență în scenariile cu procent ridicat de lipsuri.
+Pentru setul \textit{Bitcoin Historical Data}, strategiile \textit{fill\_zero} și \textit{fill with column mean} s-au dovedit sensibile la creșterea procentului de valori lipsă. La niveluri medii și ridicate ale lipsurilor, cele două abordări pot amplifica erorile și pot destabiliza performanța modelelor recurente. Din acest motiv, \textit{fill\_zero} a fost exclusă din fluxul principal de experimente, iar \textit{fill\_mean} a fost tratată cu prudență în scenariile cu procent ridicat de lipsuri.
 
-Totuși, pentru nivel redus al datelor lipsă (aproximativ 5\%), \textit{fill\_mean} poate produce rezultate acceptabile pe Bitcoin, rămânând utilă ca punct de comparație în experimentele ușoare. În practică, strategiile \textit{forward fill}, \textit{window mean} și imputarea predictivă au avut un comportament mai stabil pe intervale mai largi de lipsuri.
+La un nivel redus al datelor lipsă (aproximativ 5\%), \textit{fill\_mean} poate produce rezultate acceptabile pe Bitcoin, rămânând utilă ca punct de comparație în experimentele cu puține lipsuri. Strategiile \textit{forward fill}, \textit{window\_mean} și imputarea predictivă au avut un comportament mai stabil pe intervale mai largi de lipsuri și au produs metrici mai mici în experimentele comparative.
 
-În contrast, pe setul DSMTS nu au fost observate sensibilități similare la aceeași intensitate. Rulările au indicat că acest set de date rămâne robust inclusiv la niveluri ridicate ale valorilor lipsă (până la 50\%), fără degradări severe comparabile cu cele observate pe Bitcoin pentru strategiile problematice.
+Pe setul DSMTS nu au fost observate sensibilități similare la aceeași intensitate. Rulările au indicat că DSMTS rămâne robust inclusiv la niveluri ridicate ale valorilor lipsă (până la 50\%), fără degradări severe comparabile cu cele observate pe Bitcoin pentru strategiile problematice. Diferența dintre seturi se explică parțial prin natura datelor: DSMTS este un sistem dinamic simulat cu comportament mai regulat, în timp ce datele Bitcoin au o volatilitate mai ridicată, ceea ce face ca artefactele introduse de imputarea naivă să fie mai greu de absorbit de modelele recurente.
 
-Aceste constatări justifică utilizarea unui protocol diferențiat pe set de date: pentru Bitcoin sunt preferate strategii de imputare mai robuste la lipsuri, iar pentru DSMTS spațiul de explorare poate include o plajă mai largă de strategii și procente de lipsuri.
+Aceste constatări justifică un protocol diferențiat pe set de date: pentru Bitcoin sunt preferate strategii de imputare mai robuste, iar pentru DSMTS spațiul de explorare poate include o plajă mai largă de strategii și procente de lipsuri.
 
 \section{Concluzii privind implementarea}
 
-Implementarea realizată operationalizează cadrul metodologic propus într-un sistem software unitar, orientat atât spre cercetare, cât și spre utilizare practică. Componenta de interfață, modulul de vizualizare a valorilor lipsă și mecanismul de antrenare live oferă control și transparență asupra întregului ciclu experimental.
+Implementarea traduce cadrul metodologic propus într-un sistem software funcțional cu mai multe moduri de rulare. Bara laterală unificată, care propagă aceeași configurație în toate tab-urile, reduce riscul de inconsistențe experimentale și simplifică compararea rezultatelor între scenariile standard, federate și de ansamblu.
 
-În consecință, aplicația nu reprezintă doar un script de antrenare punctual, ci o platformă experimentală completă, capabilă să susțină evaluări comparative consistente pentru scenarii multiple. Pe această bază, capitolul următor va prezenta analiza experimentelor și interpretarea rezultatelor obținute.
+Modulele de vizualizare, de monitorizare live și de export au permis colectarea sistematică a datelor necesare analizei comparative. Interfața susține evaluări comparative pentru scenarii multiple, cu rezultate exportabile și configurații trasabile. Capitolul următor prezintă analiza experimentelor și interpretarea rezultatelor obținute cu această infrastructură.
